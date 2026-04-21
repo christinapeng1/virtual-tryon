@@ -57,7 +57,6 @@ int main() {
 
     cv::flip(frame, frame, 1);
     cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-    cv::resize(frame, frame, cv::Size(initW, initH));
 
     // Camera texture
     GLuint camTex = 0;
@@ -68,7 +67,7 @@ int main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, initW, initH, 0, GL_RGB, GL_UNSIGNED_BYTE, frame.data);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame.cols, frame.rows, 0, GL_RGB, GL_UNSIGNED_BYTE, frame.data);
 
     // Load mesh
     Mesh shirtMesh = loadMesh("../meshes/jeans_denim_jacket.glb");
@@ -128,10 +127,9 @@ int main() {
 
         cv::flip(frame, frame, 1);
         cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-        cv::resize(frame, frame, cv::Size(w, h));
 
         glBindTexture(GL_TEXTURE_2D, camTex);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, frame.data);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame.cols, frame.rows, 0, GL_RGB, GL_UNSIGNED_BYTE, frame.data);
 
         glm::vec3 worldLeft = screenToWorld(leftShoulder, depth, aspect);
         glm::vec3 worldRight = screenToWorld(rightShoulder, depth, aspect);
@@ -158,11 +156,25 @@ int main() {
         glBindTexture(GL_TEXTURE_2D, camTex);
         glColor3f(1.0f, 1.0f, 1.0f);
 
+        float camAspect = frame.cols / (float)frame.rows;
+        float winAspect = w / (float)h;
+
+        float u0 = 0.0f, u1 = 1.0f, v0 = 0.0f, v1 = 1.0f;
+        if (camAspect > winAspect) {
+            float visibleU = winAspect / camAspect;
+            u0 = (1.0f - visibleU) * 0.5f;
+            u1 = 1.0f - u0;
+        } else {
+            float visibleV = camAspect / winAspect;
+            v0 = (1.0f - visibleV) * 0.5f;
+            v1 = 1.0f - v0;
+        }
+
         glBegin(GL_QUADS);
-            glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
-            glTexCoord2f(1.0f, 0.0f); glVertex2f((GLfloat)w, 0.0f);
-            glTexCoord2f(1.0f, 1.0f); glVertex2f((GLfloat)w, (GLfloat)h);
-            glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, (GLfloat)h);
+            glTexCoord2f(u0, v0); glVertex2f(0,0);
+            glTexCoord2f(u1, v0); glVertex2f((float)w, 0);
+            glTexCoord2f(u1, v1); glVertex2f((float)w, (float)h);
+            glTexCoord2f(u0, v1); glVertex2f(0, (float)h);
         glEnd();
 
         glDisable(GL_TEXTURE_2D);

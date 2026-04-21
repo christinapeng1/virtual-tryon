@@ -30,3 +30,5 @@ target_link_libraries(main
     ${OpenCV_LIBS}
     ${ASSIMP_LIBRARY}
 )
+
+add_compile_definitions(GL_SILENCE_DEPRECATION)
