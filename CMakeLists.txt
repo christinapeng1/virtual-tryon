@@ -20,7 +20,7 @@ if(NOT ASSIMP_INCLUDE)
     message(FATAL_ERROR "assimp headers not found")
 endif()
 
-add_executable(main src/main.cpp src/pose_tracker.cpp src/utils.cpp)
+add_executable(main src/main.cpp src/pose_tracker.cpp src/utils.cpp src/mesh.cpp)
 
 target_include_directories(main PRIVATE ${OpenCV_INCLUDE_DIRS} ${ASSIMP_INCLUDE})
 
@@ -28,5 +28,15 @@ target_link_libraries(main
     glfw
     OpenGL::GL
     ${OpenCV_LIBS}
+    ${ASSIMP_LIBRARY}
+)
+
+add_executable(calibration calibration.cpp src/mesh.cpp)
+
+target_include_directories(calibration PRIVATE src ${ASSIMP_INCLUDE})
+
+target_link_libraries(calibration
+    glfw
+    OpenGL::GL
     ${ASSIMP_LIBRARY}
 )

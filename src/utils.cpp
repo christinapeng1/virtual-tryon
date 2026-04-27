@@ -1,65 +1,6 @@
 #include "utils.h"
 #include <iostream>
-#include <functional>
-#include <assimp/Importer.hpp>
-#include <assimp/scene.h>
-#include <assimp/postprocess.h>
-
-Mesh loadMesh(const std::string& path) {
-    Mesh mesh;
-
-    Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(
-        path,
-        aiProcess_Triangulate |
-        aiProcess_GenSmoothNormals |
-        aiProcess_JoinIdenticalVertices
-    );
-
-    if (!scene || !scene->mRootNode) {
-        std::cerr << "Failed to load mesh: " << importer.GetErrorString() << "\n";
-        return mesh;
-    }
-
-    std::function<void(aiNode*)> processMeshes = [&](aiNode* node) {
-        for (unsigned int i = 0; i < node->mNumMeshes; ++i) {
-            const aiMesh* aMesh = scene->mMeshes[node->mMeshes[i]];
-            unsigned int baseIdx = (unsigned int)mesh.vertices.size();
-
-            for (unsigned int v = 0; v < aMesh->mNumVertices; ++v) {
-                const auto& pos = aMesh->mVertices[v];
-                const auto& norm = aMesh->HasNormals() ? aMesh->mNormals[v] : aiVector3D(0, 0, 1);
-
-                mesh.vertices.push_back({
-                    glm::vec3(pos.x, pos.y, pos.z) * 0.1f,
-                    glm::vec3(norm.x, norm.y, norm.z)
-                });
-            }
-
-            for (unsigned int f = 0; f < aMesh->mNumFaces; ++f) {
-                const aiFace& face = aMesh->mFaces[f];
-                if (face.mNumIndices == 3) {
-                    mesh.indices.push_back(baseIdx + face.mIndices[0]);
-                    mesh.indices.push_back(baseIdx + face.mIndices[1]);
-                    mesh.indices.push_back(baseIdx + face.mIndices[2]);
-                }
-            }
-        }
-
-        for (unsigned int i = 0; i < node->mNumChildren; ++i) {
-            processMeshes(node->mChildren[i]);
-        }
-    };
-
-    processMeshes(scene->mRootNode);
-    mesh.isValid = !mesh.vertices.empty() && !mesh.indices.empty();
-
-    if (mesh.isValid) {
-        mesh.findShoulders();
-    }
-
-    return mesh;
-}
+#include <cmath>
 
 glm::vec3 screenToWorld(glm::vec2 screenPos, float depth, float aspect) {
     glm::vec2 ndc = screenPos * 2.0f - 1.0f;
