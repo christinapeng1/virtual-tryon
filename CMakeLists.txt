@@ -33,10 +33,11 @@ target_link_libraries(main
 
 add_executable(calibration calibration.cpp src/mesh.cpp)
 
-target_include_directories(calibration PRIVATE src ${ASSIMP_INCLUDE})
+target_include_directories(calibration PRIVATE src ${OpenCV_INCLUDE_DIRS} ${ASSIMP_INCLUDE})
 
 target_link_libraries(calibration
     glfw
     OpenGL::GL
+    ${OpenCV_LIBS}
     ${ASSIMP_LIBRARY}
 )

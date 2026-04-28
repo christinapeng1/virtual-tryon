@@ -514,10 +514,6 @@ int main() {
                 scaleFactor *= 1.0f;  // Reduced from 1.5f to make shirt smaller
                 torsoModel = glm::scale(glm::mat4(1.0f), glm::vec3(scaleFactor, scaleFactor, scaleFactor)) * torsoModel;
 
-                // Counter-clockwise rotation around Y-axis to correct mesh orientation
-                const float yawCorrection = 0.12f;  // ~6.9 degrees, tune this value to adjust
-                torsoModel = glm::rotate(glm::mat4(1.0f), yawCorrection, glm::vec3(0.0f, 1.0f, 0.0f)) * torsoModel;
-
                 glm::vec3 finalPos = torsoCenter + glm::vec3(0.0f, -0.1f * scaleFactor, 0.0f);  // Changed to negative to move down
                 torsoModel = glm::translate(glm::mat4(1.0f), finalPos) * torsoModel;
 
