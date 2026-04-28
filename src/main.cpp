@@ -190,19 +190,40 @@ static void deformSleeveRegion(
         glm::vec3 torsoP = glm::vec3(torsoModel * p4);
         glm::vec3 upperP = glm::vec3(upperT * p4);
         glm::vec3 lowerP = glm::vec3(lowerT * p4);
-
+        
+        // Blend through all three levels hierarchically
         glm::vec3 finalP = torsoP;
-
+        
+        // Step 1: Blend toward upper arm
+        glm::vec3 atUpper = glm::mix(torsoP, upperP, shoulderToUpper);
+        
         if (isUpper) {
-            finalP = glm::mix(torsoP, upperP, shoulderToUpper);
+            // Upper arm vertices: use the torso->upper blend
+            finalP = atUpper;
         } else {
-            finalP = glm::mix(upperP, lowerP, upperToLower);
+            // Lower arm vertices: blend from upper toward lower
+            finalP = glm::mix(atUpper, lowerP, upperToLower);
         }
 
         mesh.vertices[i].position = finalP;
     }
     
     std::cout << "Deformed " << deformCount << " vertices for " << armSide << " sleeve\n";
+    
+    // Debug: Count lower sleeve vertices specifically
+    int upperCount = 0, lowerCount = 0;
+    if (sideSign < 0.0f) {
+        for (size_t i = 0; i < mesh.vertexRegion.size(); ++i) {
+            if (mesh.vertexRegion[i] == REGION_LEFT_UPPER_SLEEVE) upperCount++;
+            if (mesh.vertexRegion[i] == REGION_LEFT_LOWER_SLEEVE) lowerCount++;
+        }
+    } else {
+        for (size_t i = 0; i < mesh.vertexRegion.size(); ++i) {
+            if (mesh.vertexRegion[i] == REGION_RIGHT_UPPER_SLEEVE) upperCount++;
+            if (mesh.vertexRegion[i] == REGION_RIGHT_LOWER_SLEEVE) lowerCount++;
+        }
+    }
+    std::cout << "  -> Upper: " << upperCount << ", Lower: " << lowerCount << "\n";
 }
 
 static void loadCalibrationIfAvailable(Mesh& mesh, const std::string& path) {
@@ -537,8 +558,8 @@ int main() {
                     leftWorld,
                     -1.0f,
                     0.08f,
-                    0.06f,
-                    0.06f
+                    0.04f,
+                    0.16f
                 );
 
                 deformSleeveRegion(
@@ -548,8 +569,8 @@ int main() {
                     rightWorld,
                     +1.0f,
                     0.08f,
-                    0.06f,
-                    0.06f
+                    0.04f,
+                    0.16f
                 );
 
                 shirtMesh.uploadDeformedVertices();

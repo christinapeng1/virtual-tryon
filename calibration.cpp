@@ -135,7 +135,7 @@ static CalibrationData computeCalibration(const Mesh& mesh,
     const glm::vec3 pRE = mesh.bindVertices[re].position;
     const glm::vec3 pRW = mesh.bindVertices[rw].position;
     const float shoulderWidth = glm::length(pRS - pLS);
-    const float leftRadius = std::max(0.28f * shoulderWidth, 0.04f);
+    const float leftRadius = std::max(0.25f * shoulderWidth, 0.04f);
     const float rightRadius = leftRadius;
 
     for (size_t i = 0; i < mesh.bindVertices.size(); ++i) {
@@ -143,18 +143,26 @@ static CalibrationData computeCalibration(const Mesh& mesh,
 
         bool leftCorridor =
             distancePointToSegment(p, pLS, pLE) <= leftRadius ||
-            distancePointToSegment(p, pLE, pLW) <= leftRadius * 1.6f;
+            distancePointToSegment(p, pLE, pLW) <= leftRadius * 1.8f;
         bool rightCorridor =
             distancePointToSegment(p, pRS, pRE) <= rightRadius ||
-            distancePointToSegment(p, pRE, pRW) <= rightRadius * 1.6f;
+            distancePointToSegment(p, pRE, pRW) <= rightRadius * 1.8f;
 
         float leftGraph = std::min({dLS[i], dLE[i], dLW[i]});
         float rightGraph = std::min({dRS[i], dRE[i], dRW[i]});
 
         if (leftCorridor && (!rightCorridor || leftGraph <= rightGraph)) {
-            out.vertexRegion[i] = (dLE[i] <= dLW[i]) ? REGION_LEFT_UPPER_SLEEVE : REGION_LEFT_LOWER_SLEEVE;
+            // Use axial position to classify upper vs lower, not graph distance
+            glm::vec3 armAxis = glm::normalize(pLW - pLS);
+            float axial = glm::dot(p - pLS, armAxis);
+            float elbowAxial = glm::dot(pLE - pLS, armAxis);
+            out.vertexRegion[i] = (axial <= elbowAxial) ? REGION_LEFT_UPPER_SLEEVE : REGION_LEFT_LOWER_SLEEVE;
         } else if (rightCorridor) {
-            out.vertexRegion[i] = (dRE[i] <= dRW[i]) ? REGION_RIGHT_UPPER_SLEEVE : REGION_RIGHT_LOWER_SLEEVE;
+            // Use axial position to classify upper vs lower, not graph distance
+            glm::vec3 armAxis = glm::normalize(pRW - pRS);
+            float axial = glm::dot(p - pRS, armAxis);
+            float elbowAxial = glm::dot(pRE - pRS, armAxis);
+            out.vertexRegion[i] = (axial <= elbowAxial) ? REGION_RIGHT_UPPER_SLEEVE : REGION_RIGHT_LOWER_SLEEVE;
         }
     }
 
