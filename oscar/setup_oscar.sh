@@ -19,52 +19,43 @@ mkdir -p "$OUTPUT_DIR/checkpoints"
 mkdir -p "$OUTPUT_DIR/logs"
 echo "Created scratch directories under: $SCRATCH_DIR"
 
-# --- Python environment ---
-# OSCAR uses modules; load a recent Python
-module load python/3.11.0 2>/dev/null || module load python 2>/dev/null || true
 
-VENV_PATH="${HOME}/scratch/venv-tryon"
-if [[ ! -d "$VENV_PATH" ]]; then
-    echo "Creating Python virtual environment at $VENV_PATH ..."
-    python3 -m venv "$VENV_PATH"
-fi
-
-source "${VENV_PATH}/bin/activate"
-pip install --upgrade pip --quiet
-pip install -r "$(dirname "$0")/../requirements_oscar.txt" --quiet
-echo "Python environment ready: $VENV_PATH"
-
-# --- .bashrc additions ---
-BASHRC="${HOME}/.bashrc"
-if ! grep -q "SURREAL_USER" "$BASHRC" 2>/dev/null; then
-    cat >> "$BASHRC" << 'EOF'
-
-# --- virtual-tryon OSCAR config ---
-# Fill in your SURREAL credentials after accepting the license:
-# https://www.di.ens.fr/willow/research/surreal/data/
-export SURREAL_USER=""
-export SURREAL_PASS=""
-
-# Activate pose model venv by default (comment out if unwanted)
-# source ~/scratch/venv-tryon/bin/activate
-EOF
-    echo "Added credential placeholders to ~/.bashrc"
-    echo ">>> Edit ~/.bashrc and fill in SURREAL_USER and SURREAL_PASS <<<"
-else
-    echo "~/.bashrc already has SURREAL_USER set"
-fi
+# --- Python environment (manual setup required) ---
+# Do NOT run this automatically — module availability varies by OSCAR node.
+# Follow these steps manually in the terminal after running this script:
+#
+#   1. Check available Python modules:
+#        module avail python
+#
+#   2. Load a Python 3.11+ module, e.g.:
+#        module load python/3.11.11-5e66
+#
+#   3. Create the virtual environment in scratch (not home — scratch has more space).
+#      Use a separate directory from ~/scratch/virtual-tryon/ (which holds data/outputs):
+#        python3 -m venv ~/scratch/venv-tryon
+#
+#   4. Activate it:
+#        source ~/scratch/venv-tryon/bin/activate
+#
+#   5. Install dependencies:
+#        pip install --upgrade pip
+#        pip install -r ~/Desktop/virtual-tryon/requirements_oscar.txt
+#
+#   6. To activate the venv in future sessions, add this to ~/.bashrc:
+#        source ~/scratch/venv-tryon/bin/activate
 
 echo ""
 echo "=== Setup complete ==="
 echo ""
 echo "Next steps:"
-echo "  1. Edit ~/.bashrc and fill in SURREAL_USER / SURREAL_PASS"
-echo "  2. Run:  source ~/.bashrc"
-echo "  3. To download SURREAL data, submit the SLURM job:"
+echo "  1. Get SURREAL credentials by accepting the license at:"
+echo "       https://www.di.ens.fr/willow/research/surreal/data/"
+echo "  2. When ready to download, export credentials in your session and submit:"
+echo "       export SURREAL_USER='yourusername'"
+echo "       export SURREAL_PASS='yourpassword'"
 echo "       sbatch oscar/download_job.sh"
-echo "  4. Or run interactively:"
-echo "       srun --mem=4G --time=04:00:00 --pty bash"
-echo "       bash oscar/download_surreal.sh"
+echo "     sbatch inherits your current environment, so the job will pick up the credentials."
+echo "     Do NOT store them in ~/.bashrc or any file tracked by git."
 echo ""
 echo "  Your data will go to: $DATA_DIR"
 echo "  Trained models will go to: $OUTPUT_DIR/checkpoints"

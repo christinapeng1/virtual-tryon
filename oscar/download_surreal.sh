@@ -13,7 +13,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-OUTDIR="${1:-${HOME}/scratch/surreal_data}"
+OUTDIR="${1:-${HOME}/scratch/virtual-tryon/surreal_data}"
 USERNAME="${2:-${SURREAL_USER:-}}"
 PASSWORD="${3:-${SURREAL_PASS:-}}"
 
