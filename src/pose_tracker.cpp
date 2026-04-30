@@ -3,8 +3,9 @@
 #include <chrono>
 #include <cstring>
 
-PoseTracker::PoseTracker() : pipe(nullptr), running(false), hasPose(false),
-    latestLeftShoulder(0.0f), latestRightShoulder(0.0f) {}
+PoseTracker::PoseTracker()
+    : pipe(nullptr), running(false), hasPose(false),
+      latestYaw(0.0f), latestVisibility(0.0f), latestWorldShoulderWidth(0.0f) {}
 
 PoseTracker::~PoseTracker() {
     stop();
@@ -19,7 +20,7 @@ bool PoseTracker::init() {
         std::cerr << "Error: Failed to start pose tracker\n";
         return false;
     }
-
+    
     running = true;
     readerThread = std::thread(&PoseTracker::readerLoop, this);
     return true;
@@ -34,16 +35,25 @@ void PoseTracker::stop() {
     }
 }
 
-bool PoseTracker::getShoulders(glm::vec2& leftShoulder, glm::vec2& rightShoulder) {
+bool PoseTracker::getShoulders(
+    glm::vec2& ls2d, glm::vec2& rs2d,
+    glm::vec3& ls3d, glm::vec3& rs3d,
+    float& yaw, float& vis, float& wsw)
+{
     std::lock_guard<std::mutex> lock(dataMutex);
     if (!hasPose) return false;
-    leftShoulder = latestLeftShoulder;
-    rightShoulder = latestRightShoulder;
+    ls2d = latestLeftShoulder2D;
+    rs2d = latestRightShoulder2D;
+    ls3d = latestLeftShoulder3D;
+    rs3d = latestRightShoulder3D;
+    yaw  = latestYaw;
+    vis  = latestVisibility;
+    wsw  = latestWorldShoulderWidth;
     return true;
 }
 
 void PoseTracker::readerLoop() {
-    char buffer[256];
+    char buffer[512];
     while (running && pipe) {
         if (fgets(buffer, sizeof(buffer), pipe) == nullptr) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -51,11 +61,24 @@ void PoseTracker::readerLoop() {
         }
 
         float lsx, lsy, rsx, rsy;
-        int result = sscanf(buffer, "%f,%f,%f,%f", &lsx, &lsy, &rsx, &rsy);
-        if (result == 4) {
+        float wlsx, wlsy, wlsz, wrsx, wrsy, wrsz;
+        float yaw, vis, wsw;
+
+        int r = sscanf(buffer, "%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f",
+            &lsx, &lsy, &rsx, &rsy,
+            &wlsx, &wlsy, &wlsz,
+            &wrsx, &wrsy, &wrsz,
+            &yaw, &vis, &wsw);
+
+        if (r == 13) {
             std::lock_guard<std::mutex> lock(dataMutex);
-            latestLeftShoulder = {lsx, lsy};
-            latestRightShoulder = {rsx, rsy};
+            latestLeftShoulder2D  = {lsx, lsy};
+            latestRightShoulder2D = {rsx, rsy};
+            latestLeftShoulder3D = {wlsx, wlsy, wlsz};
+            latestRightShoulder3D = {wrsx, wrsy, wrsz};
+            latestYaw = yaw;
+            latestVisibility = vis;
+            latestWorldShoulderWidth = wsw;
             hasPose = true;
         }
     }

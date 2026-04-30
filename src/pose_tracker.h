@@ -14,7 +14,15 @@ public:
 
     bool init();
     void stop();
-    bool getShoulders(glm::vec2& leftShoulder, glm::vec2& rightShoulder);
+    bool getShoulders(
+        glm::vec2& leftShoulder2D,
+        glm::vec2& rightShoulder2D,
+        glm::vec3& leftShoulder3D,
+        glm::vec3& rightShoulder3D,
+        float& yawDegrees,
+        float& visibility,
+        float& worldShoulderWidth
+    );
 
 private:
     void readerLoop();
@@ -23,8 +31,13 @@ private:
     std::atomic<bool> running;
     std::thread readerThread;
     std::mutex dataMutex;
-    glm::vec2 latestLeftShoulder;
-    glm::vec2 latestRightShoulder;
+    glm::vec2 latestLeftShoulder2D;
+    glm::vec2 latestRightShoulder2D;
+    glm::vec3 latestLeftShoulder3D;
+    glm::vec3 latestRightShoulder3D;
+    float latestYaw;
+    float latestVisibility;
+    float latestWorldShoulderWidth;
     bool hasPose;
 };
 

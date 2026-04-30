@@ -94,7 +94,14 @@ int main() {
 
     glm::vec2 leftShoulder(0.35f, 0.4f);
     glm::vec2 rightShoulder(0.65f, 0.4f);
+    float trackedYaw = 0.0f;  
+    float rawYawDegrees = 1.0f; 
+    float smoothedYaw = 1.0f;
+    float poseVisibility = 1.0f;
     float depth = -2.5f;
+    glm::vec3 leftShoulder3D(0.0f);
+    glm::vec3 rightShoulder3D(0.0f);
+    float worldShoulderWidth = 0.4f;
 
     while (!glfwWindowShouldClose(window)) {
         int w, h;
@@ -112,15 +119,23 @@ int main() {
 
         leftShoulder = glm::clamp(leftShoulder, glm::vec2(0.0f), glm::vec2(1.0f));
         rightShoulder = glm::clamp(rightShoulder, glm::vec2(0.0f), glm::vec2(1.0f));
-        depth = glm::clamp(depth, -8.0f, -1.5f);
 
         if (trackerReady) {
             glm::vec2 tl, tr;
-            if (tracker.getShoulders(tl, tr)) {
-                leftShoulder = tl;
-                rightShoulder = tr;
+            glm::vec3 tl3d, tr3d;
+            float rawYaw = 0.0f, vis = 1.0f, wsw = 0.4f;
+            if (tracker.getShoulders(tl, tr, tl3d, tr3d, rawYaw, vis, wsw)) {
+                leftShoulder       = tl;
+                rightShoulder      = tr;
+                leftShoulder3D     = tl3d;
+                rightShoulder3D    = tr3d;
+                rawYawDegrees     = rawYaw;
+                poseVisibility     = vis;
+                worldShoulderWidth = wsw;
             }
         }
+        float mpAvgZ = (leftShoulder3D.z + rightShoulder3D.z) * 0.5f;
+        float sceneDepth = glm::clamp(-2.5f + mpAvgZ * 5.0f, -8.0f, -1.2f);
 
         camera >> frame;
         if (frame.empty()) break;
@@ -131,8 +146,8 @@ int main() {
         glBindTexture(GL_TEXTURE_2D, camTex);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame.cols, frame.rows, 0, GL_RGB, GL_UNSIGNED_BYTE, frame.data);
 
-        glm::vec3 worldLeft = screenToWorld(leftShoulder, depth, aspect);
-        glm::vec3 worldRight = screenToWorld(rightShoulder, depth, aspect);
+        glm::vec3 worldLeft = screenToWorld(leftShoulder, sceneDepth, aspect);
+        glm::vec3 worldRight = screenToWorld(rightShoulder, sceneDepth, aspect);
         glm::vec3 torsoCenter = (worldLeft + worldRight) * 0.5f;
 
         glm::vec3 shoulderVec = worldRight - worldLeft;
@@ -213,33 +228,47 @@ int main() {
             glm::vec3 meshShoulderCenter = (shirtMesh.leftShoulderPos + shirtMesh.rightShoulderPos) * 0.5f;
             float meshShoulderWidth = glm::length(meshShoulderVec);
 
-            if (shoulderDist > 1e-5f && meshShoulderWidth > 1e-5f) {
-                glm::vec3 targetDir = glm::normalize(shoulderVec);
-                glm::vec3 meshDir = glm::normalize(meshShoulderVec);
+            if (meshShoulderWidth > 1e-5f && worldShoulderWidth > 1e-5f) {
 
-                glm::mat4 model(1.0f);
+                // Smooth yaw with wraparound
+                float delta = rawYawDegrees - smoothedYaw;
+                if (delta >  180.0f) delta -= 360.0f;
+                if (delta < -180.0f) delta += 360.0f;
+                smoothedYaw += 0.08f * delta;
 
-                // Move mesh local shoulder center to origin
+                const float kScale = 0.25f;
+                float scaleFactor = (worldShoulderWidth / meshShoulderWidth) * kScale;
+                float screenShoulderDist = glm::length(rightShoulder - leftShoulder);
+
+                // Clamp scale to sane range
+                scaleFactor = glm::clamp(scaleFactor, 0.25f, 0.3f);
+
+                // Build model matrix:
+                // 1. Move mesh shoulder center to origin
+                // 2. Apply yaw rotation (+180 because mesh faces -Z)
+                // 3. Scale uniformly
+                // 4. Translate to torso world position
+                glm::mat4 model = glm::mat4(1.0f);
+
+                // Step 1: center mesh at its own shoulder midpoint
                 model = glm::translate(model, -meshShoulderCenter);
 
-                // Rotate mesh shoulder line to tracked shoulder line
-                float d = glm::clamp(glm::dot(meshDir, targetDir), -1.0f, 1.0f);
-                float angle = std::acos(d);
-                glm::vec3 axis = glm::cross(meshDir, targetDir);
+                // Step 2: yaw rotation around Y
+                model = glm::rotate(glm::mat4(1.0f),
+                                    glm::radians(-smoothedYaw + 180.0f),
+                                    glm::vec3(0.0f, 1.0f, 0.0f)) * model;
 
-                if (glm::length(axis) > 1e-6f && angle > 1e-6f) {
-                    model = glm::rotate(glm::mat4(1.0f), angle, glm::normalize(axis)) * model;
-                }
+                // Step 3: scale
+                model = glm::scale(glm::mat4(1.0f), glm::vec3(scaleFactor)) * model;
 
-                // Scale mesh to actual shoulder width
-                float scaleFactor = shoulderDist / meshShoulderWidth;
-                scaleFactor *= 3.f;
+                // Step 4: place at torso center in world space
+                glm::vec3 worldLeft  = screenToWorld(leftShoulder,  sceneDepth, aspect);
+                glm::vec3 worldRight = screenToWorld(rightShoulder, sceneDepth, aspect);
+                glm::vec3 finalPos   = (worldLeft + worldRight) * 0.5f;
 
-                // Flip Y if the asset needs it
-                model = glm::scale(glm::mat4(1.0f), glm::vec3(scaleFactor, scaleFactor, scaleFactor)) * model;
+                // Slight upward nudge so collar sits at neck
+                finalPos.y += 0.5f * scaleFactor;
 
-                // Place it at torso center with a slight downward offset
-                glm::vec3 finalPos = torsoCenter + glm::vec3(0.0f, 0.08f * scaleFactor, 0.0f);
                 model = glm::translate(glm::mat4(1.0f), finalPos) * model;
 
                 glPushMatrix();

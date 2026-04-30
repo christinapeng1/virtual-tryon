@@ -31,8 +31,8 @@ struct Mesh {
         }
 
         float shoulderY = maxY - (maxPos.y - minPos.y) * 0.1f;
-        leftShoulderPos = {maxPos.x, shoulderY, 0.0f};
-        rightShoulderPos  = {minPos.x, shoulderY, 0.0f};
+        leftShoulderPos = {minPos.x, shoulderY, 0.0f};
+        rightShoulderPos  = {maxPos.x, shoulderY, 0.0f};
     }
 
     void draw() {
