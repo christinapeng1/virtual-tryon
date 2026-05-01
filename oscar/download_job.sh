@@ -2,7 +2,7 @@
 #SBATCH --job-name=surreal_download
 #SBATCH --output=%x_%j.out       # output file: surreal_download_<jobid>.out
 #SBATCH --error=%x_%j.err
-#SBATCH --time=8:00:00           # 8 hours to safely download ~7GB across 110k files
+#SBATCH --time=16:00:00           # 816hours to safely download ~7GB across 110k files
 #SBATCH --mem=2G
 #SBATCH --nodes=1
 #SBATCH --ntasks=1

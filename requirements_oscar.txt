@@ -1,6 +1,13 @@
 # Python dependencies for training on OSCAR (no MediaPipe/OpenCV camera needed)
-torch>=2.1.0
-torchvision>=0.16.0
+#
+# PyTorch must be installed from the cu124 index to match Oscar's CUDA 12.x driver.
+# Do NOT install torch/torchvision from PyPI directly — it resolves to a CUDA 13
+# build that Oscar's driver cannot support.
+#
+# Install with:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+#   pip install -r requirements_oscar.txt
+#   pip install --force-reinstall     torch==2.5.1+cu124     torchvision==0.20.1+cu124     --index-url https://download.pytorch.org/whl/cu124
 numpy>=1.24.0
 scipy>=1.11.0        # for loading .mat files (SURREAL annotations)
 opencv-python-headless>=4.8.0  # headless: no GUI/camera, just image decoding
