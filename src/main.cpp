@@ -362,9 +362,7 @@ int main() {
     glEnable(GL_LIGHT0);
     glEnable(GL_COLOR_MATERIAL);
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);  // Hide back faces
-    glFrontFace(GL_CCW);  // Counter-clockwise is front-facing
+    glDisable(GL_CULL_FACE);
     glShadeModel(GL_SMOOTH);
 
     GLfloat lightPos[] = {0.0f, 0.0f, 2.0f, 1.0f};
@@ -560,7 +558,7 @@ int main() {
                     leftWorld,
                     -1.0f,
                     0.12f,
-                    0.10f,
+                    0.08f,
                     0.16f
                 );
 
@@ -571,7 +569,7 @@ int main() {
                     rightWorld,
                     +1.0f,
                     0.12f,
-                    0.10f,
+                    0.08f,
                     0.16f
                 );
 
