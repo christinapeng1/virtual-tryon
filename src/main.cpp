@@ -15,7 +15,6 @@
 #include "pose_tracker.h"
 #include "utils.h"
 
-
 static glm::vec3 smoothVec3(const glm::vec3& prev, const glm::vec3& curr, float alpha) {
     return prev * (1.0f - alpha) + curr * alpha;
 }
@@ -24,6 +23,26 @@ static glm::vec3 safeNormalize(const glm::vec3& v, const glm::vec3& fallback = g
     float len = glm::length(v);
     if (len < 1e-6f) return fallback;
     return v / len;
+}
+
+static float smoothstepf(float a, float b, float x) {
+    if (std::abs(b - a) < 1e-6f) return x < a ? 0.0f : 1.0f;
+    float t = glm::clamp((x - a) / (b - a), 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+static float getMeshVerticalHeight(const Mesh& mesh) {
+    if (mesh.bindVertices.empty()) return 1.0f;
+
+    float minY = mesh.bindVertices[0].position.y;
+    float maxY = mesh.bindVertices[0].position.y;
+
+    for (const auto& v : mesh.bindVertices) {
+        minY = glm::min(minY, v.position.y);
+        maxY = glm::max(maxY, v.position.y);
+    }
+
+    return glm::max(maxY - minY, 1e-5f);
 }
 
 static glm::mat4 rotationBetweenVectors(const glm::vec3& from, const glm::vec3& to) {
@@ -56,6 +75,7 @@ static glm::mat4 makeRigidSegmentTransform(
 
     float localLen = glm::length(localDir);
     float worldLen = glm::length(worldDir);
+
     if (localLen < 1e-6f || worldLen < 1e-6f) {
         return glm::translate(glm::mat4(1.0f), worldA - localA);
     }
@@ -64,13 +84,10 @@ static glm::mat4 makeRigidSegmentTransform(
     float scale = (worldLen / localLen) * extraScale;
     glm::mat4 S = glm::scale(glm::mat4(1.0f), glm::vec3(scale));
 
-    return glm::translate(glm::mat4(1.0f), worldA) * R * S * glm::translate(glm::mat4(1.0f), -localA);
-}
-
-static float smoothstepf(float a, float b, float x) {
-    if (std::abs(b - a) < 1e-6f) return x < a ? 0.0f : 1.0f;
-    float t = glm::clamp((x - a) / (b - a), 0.0f, 1.0f);
-    return t * t * (3.0f - 2.0f * t);
+    return glm::translate(glm::mat4(1.0f), worldA) *
+           R *
+           S *
+           glm::translate(glm::mat4(1.0f), -localA);
 }
 
 struct SleeveRegion {
@@ -106,11 +123,6 @@ static void deformSleeveRegion(
     );
 
     float upperLen = glm::max(glm::length(local.elbow - local.shoulder), 1e-5f);
-    float lowerLen = glm::max(glm::length(local.wrist - local.elbow), 1e-5f);
-    
-    // Debug: Count how many vertices we're deforming
-    int deformCount = 0;
-    std::string armSide = (sideSign < 0.0f) ? "LEFT" : "RIGHT";
 
     for (size_t i = 0; i < mesh.vertices.size() && i < mesh.bindVertices.size(); ++i) {
         const glm::vec3 p = mesh.bindVertices[i].position;
@@ -119,64 +131,46 @@ static void deformSleeveRegion(
         bool isLower = false;
 
         if (sideSign < 0.0f) {
-            isUpper = (mesh.vertexRegion[i] == REGION_LEFT_UPPER_SLEEVE);
-            isLower = (mesh.vertexRegion[i] == REGION_LEFT_LOWER_SLEEVE);
+            isUpper = mesh.vertexRegion[i] == REGION_LEFT_UPPER_SLEEVE;
+            isLower = mesh.vertexRegion[i] == REGION_LEFT_LOWER_SLEEVE;
         } else {
-            isUpper = (mesh.vertexRegion[i] == REGION_RIGHT_UPPER_SLEEVE);
-            isLower = (mesh.vertexRegion[i] == REGION_RIGHT_LOWER_SLEEVE);
+            isUpper = mesh.vertexRegion[i] == REGION_RIGHT_UPPER_SLEEVE;
+            isLower = mesh.vertexRegion[i] == REGION_RIGHT_LOWER_SLEEVE;
         }
 
-        if (!isUpper && !isLower) {
-            continue;
-        }
-        
-        deformCount++;
+        if (!isUpper && !isLower) continue;
 
         glm::vec3 rel = p - local.shoulder;
         float axial = glm::dot(rel, armAxis);
 
-        float shoulderToUpper = smoothstepf(-0.05f, torsoBlendWidth, axial);
-        shoulderToUpper = shoulderToUpper * shoulderToUpper * shoulderToUpper;
-        float upperToLower = smoothstepf(upperLen - upperBlendWidth, upperLen + lowerBlendWidth, axial);
+        float shoulderToUpper = smoothstepf(
+            0.0f,
+            upperLen * 0.65f,
+            axial
+        );
+
+        // Make shoulder transition softer and less abrupt.
+        shoulderToUpper = shoulderToUpper * shoulderToUpper * (3.0f - 2.0f * shoulderToUpper);
+
+        float upperToLower = smoothstepf(
+            upperLen - upperBlendWidth,
+            upperLen + lowerBlendWidth,
+            axial
+        );
 
         glm::vec4 p4(p, 1.0f);
         glm::vec3 torsoP = glm::vec3(torsoModel * p4);
         glm::vec3 upperP = glm::vec3(upperT * p4);
         glm::vec3 lowerP = glm::vec3(lowerT * p4);
-        
-        // Blend through all three levels hierarchically
-        glm::vec3 finalP = torsoP;
-        
-        // Step 1: Blend toward upper arm
-        glm::vec3 atUpper = glm::mix(torsoP, upperP, shoulderToUpper);
-        
-        if (isUpper) {
-            // Upper arm vertices: use the torso->upper blend
-            finalP = atUpper;
-        } else {
-            // Lower arm vertices: blend from upper toward lower
-            finalP = glm::mix(atUpper, lowerP, upperToLower);
-        }
 
-        mesh.vertices[i].position = finalP;
-    }
-    
-    std::cout << "Deformed " << deformCount << " vertices for " << armSide << " sleeve\n";
-    
-    // Debug: Count lower sleeve vertices specifically
-    int upperCount = 0, lowerCount = 0;
-    if (sideSign < 0.0f) {
-        for (size_t i = 0; i < mesh.vertexRegion.size(); ++i) {
-            if (mesh.vertexRegion[i] == REGION_LEFT_UPPER_SLEEVE) upperCount++;
-            if (mesh.vertexRegion[i] == REGION_LEFT_LOWER_SLEEVE) lowerCount++;
-        }
-    } else {
-        for (size_t i = 0; i < mesh.vertexRegion.size(); ++i) {
-            if (mesh.vertexRegion[i] == REGION_RIGHT_UPPER_SLEEVE) upperCount++;
-            if (mesh.vertexRegion[i] == REGION_RIGHT_LOWER_SLEEVE) lowerCount++;
+        glm::vec3 atUpper = glm::mix(torsoP, upperP, shoulderToUpper);
+
+        if (isUpper) {
+            mesh.vertices[i].position = atUpper;
+        } else {
+            mesh.vertices[i].position = glm::mix(atUpper, lowerP, upperToLower);
         }
     }
-    std::cout << "  -> Upper: " << upperCount << ", Lower: " << lowerCount << "\n";
 }
 
 static void loadCalibrationIfAvailable(Mesh& mesh, const std::string& path) {
@@ -189,7 +183,6 @@ static void loadCalibrationIfAvailable(Mesh& mesh, const std::string& path) {
     std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     file.close();
 
-    // Simple JSON parsing for anchors
     size_t anchorsStart = content.find("\"anchors\"");
     if (anchorsStart == std::string::npos) {
         std::cout << "No anchors in calibration file\n";
@@ -200,49 +193,38 @@ static void loadCalibrationIfAvailable(Mesh& mesh, const std::string& path) {
         size_t bracketStart = text.find("[", start);
         size_t bracketEnd = text.find("]", bracketStart);
         std::string vecStr = text.substr(bracketStart + 1, bracketEnd - bracketStart - 1);
-        
-        glm::vec3 v;
+
+        glm::vec3 v(0.0f);
         int count = std::sscanf(vecStr.c_str(), "%f, %f, %f", &v.x, &v.y, &v.z);
         if (count != 3) std::cout << "Failed to parse vec3\n";
         return v;
     };
 
-    // Extract each joint position
     std::cout << "Loading calibration...\n";
+
     mesh.leftShoulderPos = parseVec3(content, content.find("\"leftShoulder\""));
     mesh.leftElbowPos = parseVec3(content, content.find("\"leftElbow\""));
     mesh.leftWristPos = parseVec3(content, content.find("\"leftWrist\""));
     mesh.rightShoulderPos = parseVec3(content, content.find("\"rightShoulder\""));
     mesh.rightElbowPos = parseVec3(content, content.find("\"rightElbow\""));
     mesh.rightWristPos = parseVec3(content, content.find("\"rightWrist\""));
-    
-    std::cout << "Joint positions loaded:\n"
-              << "  Left: shoulder=" << mesh.leftShoulderPos.x << "," << mesh.leftShoulderPos.y 
-              << " elbow=" << mesh.leftElbowPos.x << "," << mesh.leftElbowPos.y 
-              << " wrist=" << mesh.leftWristPos.x << "," << mesh.leftWristPos.y << "\n"
-              << "  Right: shoulder=" << mesh.rightShoulderPos.x << "," << mesh.rightShoulderPos.y 
-              << " elbow=" << mesh.rightElbowPos.x << "," << mesh.rightElbowPos.y 
-              << " wrist=" << mesh.rightWristPos.x << "," << mesh.rightWristPos.y << "\n";
 
-    // Parse vertexRegion array
     size_t regionStart = content.find("\"vertexRegion\"");
     if (regionStart != std::string::npos) {
         size_t arrayStart = content.find("[", regionStart);
         size_t arrayEnd = content.find("]", arrayStart);
         std::string arrayStr = content.substr(arrayStart + 1, arrayEnd - arrayStart - 1);
         std::istringstream iss(arrayStr);
-        
+
         mesh.vertexRegion.clear();
+
         int value;
-        int leftCount = 0, rightCount = 0;
         while (iss >> value) {
             mesh.vertexRegion.push_back(value);
-            if (value == REGION_LEFT_UPPER_SLEEVE || value == REGION_LEFT_LOWER_SLEEVE) leftCount++;
-            if (value == REGION_RIGHT_UPPER_SLEEVE || value == REGION_RIGHT_LOWER_SLEEVE) rightCount++;
             if (iss.peek() == ',') iss.ignore();
         }
-        std::cout << "Loaded " << mesh.vertexRegion.size() << " vertex regions: " 
-                  << leftCount << " left sleeve, " << rightCount << " right sleeve\n";
+
+        std::cout << "Loaded " << mesh.vertexRegion.size() << " vertex regions\n";
     }
 
     std::cout << "Calibration loaded successfully\n";
@@ -305,9 +287,9 @@ int main() {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, initW, initH, 0, GL_RGB, GL_UNSIGNED_BYTE, frame.data);
 
     Mesh shirtMesh = loadMesh("../meshes/jeans_denim_jacket.glb");
-
-    // Load calibration data if available
     loadCalibrationIfAvailable(shirtMesh, "calibration.json");
+
+    float meshVerticalHeight = getMeshVerticalHeight(shirtMesh);
 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glEnable(GL_DEPTH_TEST);
@@ -318,10 +300,15 @@ int main() {
     glDisable(GL_CULL_FACE);
     glShadeModel(GL_SMOOTH);
 
-    GLfloat lightPos[] = {0.0f, 0.0f, 2.0f, 1.0f};
-    GLfloat lightDiffuse[] = {0.9f, 0.9f, 0.9f, 1.0f};
+    GLfloat lightPos[] = {0.0f, 0.0f, 1.0f, 0.0f}; // directional light from camera
+    GLfloat lightAmbient[] = {0.45f, 0.45f, 0.45f, 1.0f};
+    GLfloat lightDiffuse[] = {0.95f, 0.95f, 0.95f, 1.0f};
+    GLfloat lightSpecular[] = {0.20f, 0.20f, 0.20f, 1.0f};
+
     glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
+    glLightfv(GL_LIGHT0, GL_AMBIENT, lightAmbient);
     glLightfv(GL_LIGHT0, GL_DIFFUSE, lightDiffuse);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, lightSpecular);
 
     PoseTracker tracker;
     bool trackerReady = tracker.init();
@@ -336,6 +323,7 @@ int main() {
     glm::vec2 leftHip(0.35f, 0.70f);
     glm::vec2 rightHip(0.65f, 0.70f);
     glm::vec2 nose(0.50f, 0.30f);
+
     float rawYawDegrees = 0.0f;
     float smoothedYaw = 0.0f;
     float poseVisibility = 0.0f;
@@ -343,7 +331,9 @@ int main() {
 
     float depth = -2.5f;
 
-    glm::vec3 sLS(0.0f), sRS(0.0f), sLE(0.0f), sRE(0.0f), sLW(0.0f), sRW(0.0f), sLH(0.0f), sRH(0.0f), sNose(0.0f);
+    glm::vec3 sLS(0.0f), sRS(0.0f), sLE(0.0f), sRE(0.0f);
+    glm::vec3 sLW(0.0f), sRW(0.0f), sLH(0.0f), sRH(0.0f), sNose(0.0f);
+
     bool smoothingInitialized = false;
     const float jointSmoothAlpha = 0.35f;
 
@@ -355,10 +345,40 @@ int main() {
             continue;
         }
 
-        float aspect = w / (float)h;
+        float aspect = w / static_cast<float>(h);
 
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
             glfwSetWindowShouldClose(window, GLFW_TRUE);
+        }
+
+        if (trackerReady) {
+            float yaw, vis, wsw;
+            if (tracker.getRotation(yaw, vis, wsw)) {
+                rawYawDegrees = yaw;
+                poseVisibility = vis;
+                worldShoulderWidth = wsw;
+            }
+
+            glm::vec2 tls, trs, tle, tre, tlw, trw;
+            if (tracker.getUpperBody(tls, trs, tle, tre, tlw, trw)) {
+                leftShoulder = tls;
+                rightShoulder = trs;
+                leftElbow = tle;
+                rightElbow = tre;
+                leftWrist = tlw;
+                rightWrist = trw;
+            }
+
+            glm::vec2 tlh, trh;
+            if (tracker.getHips(tlh, trh)) {
+                leftHip = tlh;
+                rightHip = trh;
+            }
+
+            glm::vec2 tnose;
+            if (tracker.getNose(tnose)) {
+                nose = tnose;
+            }
         }
 
         leftShoulder = glm::clamp(leftShoulder, glm::vec2(0.0f), glm::vec2(1.0f));
@@ -371,37 +391,6 @@ int main() {
         rightHip = glm::clamp(rightHip, glm::vec2(0.0f), glm::vec2(1.0f));
         nose = glm::clamp(nose, glm::vec2(0.0f), glm::vec2(1.0f));
         depth = glm::clamp(depth, -8.0f, -1.5f);
-
-        if (trackerReady) {
-            float yaw, vis, wsw;
-            if (tracker.getRotation(yaw, vis, wsw)) {
-                rawYawDegrees = yaw;
-                poseVisibility = vis;
-                worldShoulderWidth = wsw;
-            }
-            std::cout << "rawYaw=" << rawYawDegrees
-          << " smoothedYaw=" << smoothedYaw
-          << " vis=" << poseVisibility
-          << std::endl;
-            glm::vec2 tls, trs, tle, tre, tlw, trw;
-            if (tracker.getUpperBody(tls, trs, tle, tre, tlw, trw)) {
-                leftShoulder = tls;
-                rightShoulder = trs;
-                leftElbow = tle;
-                rightElbow = tre;
-                leftWrist = tlw;
-                rightWrist = trw;
-            }
-            glm::vec2 tlh, trh;
-            if (tracker.getHips(tlh, trh)) {
-                leftHip = tlh;
-                rightHip = trh;
-            }
-            glm::vec2 tnose;
-            if (tracker.getNose(tnose)) {
-                nose = tnose;
-            }
-        }
 
         camera >> frame;
         if (frame.empty()) break;
@@ -424,7 +413,8 @@ int main() {
         glm::vec3 wsNose = screenToWorld(nose, depth, aspect);
 
         if (!smoothingInitialized) {
-            sLS = wsLS; sRS = wsRS; sLE = wsLE; sRE = wsRE; sLW = wsLW; sRW = wsRW; sLH = wsLH; sRH = wsRH; sNose = wsNose;
+            sLS = wsLS; sRS = wsRS; sLE = wsLE; sRE = wsRE;
+            sLW = wsLW; sRW = wsRW; sLH = wsLH; sRH = wsRH; sNose = wsNose;
             smoothingInitialized = true;
         } else {
             sLS = smoothVec3(sLS, wsLS, jointSmoothAlpha);
@@ -439,18 +429,11 @@ int main() {
         }
 
         glm::vec3 torsoCenter = (sLS + sRS) * 0.5f;
-        glm::vec3 shoulderVec = sRS - sLS;
-        glm::vec3 hipVec = sRH - sLH;
-        float shoulderDist = glm::length(shoulderVec);
-        float hipDist = glm::length(hipVec);
-        
-        // Calculate hip-to-shoulder distance for more stable scaling
         glm::vec3 hipCenter = (sLH + sRH) * 0.5f;
-        glm::vec3 hipToShoulderVec = torsoCenter - hipCenter;
-        float hipToShoulderDist = glm::length(hipToShoulderVec);
-        
-        // Use average of shoulder width and hip-to-shoulder distance for more robust scale
-        float avgCharSizeRef = (shoulderDist + hipToShoulderDist) * 0.5f;
+        glm::vec3 shoulderVec = sRS - sLS;
+
+        float torsoHeightRef = glm::length(torsoCenter - hipCenter);
+        torsoHeightRef = glm::max(torsoHeightRef, 1e-5f);
 
         glViewport(0, 0, w, h);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -483,9 +466,11 @@ int main() {
             glColor3f(0.0f, 1.0f, 0.0f);
             glVertex2f(leftShoulder.x * w, leftShoulder.y * h);
             glVertex2f(rightShoulder.x * w, rightShoulder.y * h);
+
             glColor3f(1.0f, 1.0f, 0.0f);
             glVertex2f(leftElbow.x * w, leftElbow.y * h);
             glVertex2f(rightElbow.x * w, rightElbow.y * h);
+
             glColor3f(1.0f, 0.2f, 0.2f);
             glVertex2f(leftWrist.x * w, leftWrist.y * h);
             glVertex2f(rightWrist.x * w, rightWrist.y * h);
@@ -502,70 +487,64 @@ int main() {
         glLoadIdentity();
         glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
 
-        // Debug visualization spheres - disabled for cleaner view
-        // drawSphere(sLS, 0.05f);
-        // drawSphere(sRS, 0.05f);
-        // drawSphere(sLE, 0.04f);
-        // drawSphere(sRE, 0.04f);
-        // drawSphere(sLW, 0.035f);
-        // drawSphere(sRW, 0.035f);
-
         if (shirtMesh.isValid) {
             glm::vec3 meshShoulderVec = shirtMesh.rightShoulderPos - shirtMesh.leftShoulderPos;
             glm::vec3 meshShoulderCenter = (shirtMesh.leftShoulderPos + shirtMesh.rightShoulderPos) * 0.5f;
             float meshShoulderWidth = glm::length(meshShoulderVec);
 
-            if (avgCharSizeRef > 1e-5f && meshShoulderWidth > 1e-5f) {
-                // Calculate Z-rotation from nose position (from screen coordinates)
-                
-                glm::vec3 targetDir = glm::normalize(shoulderVec);
-                glm::vec3 meshDir = glm::normalize(meshShoulderVec);
-
-                // Build transformation from the inside out
-                // Step 1: Remove mesh center
-                glm::mat4 torsoModel(1.0f);
-                torsoModel = glm::translate(torsoModel, -meshShoulderCenter);
-
-
-                // // Step 3: Scale
-                // float scaleFactor = avgCharSizeRef / meshShoulderWidth;
-                // scaleFactor *= 1.0f;
-                // torsoModel = glm::scale(glm::mat4(1.0f), glm::vec3(scaleFactor, scaleFactor, scaleFactor)) * torsoModel;
-
-                // Step 4: Translate to world position
-                // Smooth yaw
+            if (meshShoulderWidth > 1e-5f && torsoHeightRef > 1e-5f) {
                 float delta = rawYawDegrees - smoothedYaw;
                 if (delta > 180.0f) delta -= 360.0f;
                 if (delta < -180.0f) delta += 360.0f;
                 smoothedYaw += 0.08f * delta;
-                // Apply yaw BEFORE scale and translation.
-                // This rotates the jacket around its own centered torso, not around world origin.
+
+                glm::mat4 torsoModel(1.0f);
+
+                torsoModel = glm::translate(torsoModel, -meshShoulderCenter);
+
                 torsoModel =
                     glm::rotate(
                         glm::mat4(1.0f),
-                        glm::radians(-smoothedYaw),   // start WITHOUT +180
+                        glm::radians(-smoothedYaw),
                         glm::vec3(0.0f, 1.0f, 0.0f)
                     ) * torsoModel;
 
-                // Step 3: Scale
-                float scaleFactor = avgCharSizeRef / meshShoulderWidth;
-                scaleFactor *= 1.0f;;
+                // Stable torso scale:
+                // user size = MediaPipe shoulder-center to hip-center.
+                // mesh size = mesh vertical height from bind-pose vertices.
+                float scaleFactor = torsoHeightRef / glm::max(meshVerticalHeight, 1e-5f);
+
+                // Visual fit multiplier.
+                // Increase if jacket is too small, decrease if too big.
+                scaleFactor *= 1.35f;
+
                 torsoModel = glm::scale(glm::mat4(1.0f), glm::vec3(scaleFactor)) * torsoModel;
 
-                // Step 4: Translate to world position
-                glm::vec3 finalPos = torsoCenter + glm::vec3(0.0f, -0.1f * scaleFactor, 0.0f);
+                // Slightly raise the jacket relative to shoulder center.
+                glm::vec3 finalPos = torsoCenter + glm::vec3(0.0f, 0.08f * scaleFactor, 0.0f);
                 torsoModel = glm::translate(glm::mat4(1.0f), finalPos) * torsoModel;
 
-                // Single-mesh path: start from bind pose, convert all vertices by torso placement,
-                // then overwrite only sleeve regions with arm-aware deformation.
                 shirtMesh.resetToBindPose();
+
                 for (size_t i = 0; i < shirtMesh.vertices.size() && i < shirtMesh.bindVertices.size(); ++i) {
                     glm::vec4 p = torsoModel * glm::vec4(shirtMesh.bindVertices[i].position, 1.0f);
                     shirtMesh.vertices[i].position = glm::vec3(p);
                 }
 
-                SleeveRegion leftLocal { shirtMesh.leftShoulderPos, shirtMesh.leftElbowPos, shirtMesh.leftWristPos, true };
-                SleeveRegion rightLocal{ shirtMesh.rightShoulderPos, shirtMesh.rightElbowPos, shirtMesh.rightWristPos, false };
+                SleeveRegion leftLocal {
+                    shirtMesh.leftShoulderPos,
+                    shirtMesh.leftElbowPos,
+                    shirtMesh.leftWristPos,
+                    true
+                };
+
+                SleeveRegion rightLocal {
+                    shirtMesh.rightShoulderPos,
+                    shirtMesh.rightElbowPos,
+                    shirtMesh.rightWristPos,
+                    false
+                };
+
                 glm::vec3 torsoLeftShoulder =
                     glm::vec3(torsoModel * glm::vec4(shirtMesh.leftShoulderPos, 1.0f));
 
@@ -573,12 +552,11 @@ int main() {
                     glm::vec3(torsoModel * glm::vec4(shirtMesh.rightShoulderPos, 1.0f));
 
                 auto makeArmTarget = [&](const glm::vec3& torsoShoulder,
-                         const glm::vec3& screenElbow,
-                         const glm::vec3& screenWrist) {
+                                         const glm::vec3& screenElbow,
+                                         const glm::vec3& screenWrist) {
                     glm::vec3 elbowOffset = screenElbow - torsoShoulder;
                     glm::vec3 wristOffset = screenWrist - torsoShoulder;
 
-                    // Keep 2D movement, but force arm depth to live with the torso shoulder.
                     elbowOffset.z = 0.0f;
                     wristOffset.z = 0.0f;
 
@@ -590,29 +568,44 @@ int main() {
 
                 auto [fixedLE, fixedLW] = makeArmTarget(torsoLeftShoulder, sLE, sLW);
                 auto [fixedRE, fixedRW] = makeArmTarget(torsoRightShoulder, sRE, sRW);
-                SleeveRegion leftWorld { torsoLeftShoulder, fixedLE, fixedLW, true };
-                SleeveRegion rightWorld{ torsoRightShoulder, fixedRE, fixedRW, false };
 
-                deformSleeveRegion(shirtMesh, torsoModel, leftLocal, leftWorld,
-                   -1.0f, 0.45f, 0.12f, 0.20f);
+                SleeveRegion leftWorld {
+                    torsoLeftShoulder,
+                    fixedLE,
+                    fixedLW,
+                    true
+                };
 
-                deformSleeveRegion(shirtMesh, torsoModel, rightLocal, rightWorld,
-                                +1.0f, 0.45f, 0.12f, 0.20f);
+                SleeveRegion rightWorld {
+                    torsoRightShoulder,
+                    fixedRE,
+                    fixedRW,
+                    false
+                };
+
+                deformSleeveRegion(
+                    shirtMesh,
+                    torsoModel,
+                    leftLocal,
+                    leftWorld,
+                    -1.0f,
+                    0.65f,
+                    0.18f,
+                    0.20f
+                );
+
+                deformSleeveRegion(
+                    shirtMesh,
+                    torsoModel,
+                    rightLocal,
+                    rightWorld,
+                    +1.0f,
+                    0.65f,
+                    0.18f,
+                    0.20f
+                );
 
                 shirtMesh.uploadDeformedVertices();
-
-                // DEBUG: Visualize mesh's elbow and wrist positions (transformed by torso)
-                glColor3f(1.0f, 0.0f, 1.0f);  // Magenta for mesh elbows
-                glm::vec4 meshLeftElbow4 = torsoModel * glm::vec4(shirtMesh.leftElbowPos, 1.0f);
-                glm::vec4 meshRightElbow4 = torsoModel * glm::vec4(shirtMesh.rightElbowPos, 1.0f);
-                drawSphere(glm::vec3(meshLeftElbow4), 0.04f);
-                drawSphere(glm::vec3(meshRightElbow4), 0.04f);
-                
-                glColor3f(0.0f, 1.0f, 1.0f);  // Cyan for mesh wrists
-                glm::vec4 meshLeftWrist4 = torsoModel * glm::vec4(shirtMesh.leftWristPos, 1.0f);
-                glm::vec4 meshRightWrist4 = torsoModel * glm::vec4(shirtMesh.rightWristPos, 1.0f);
-                drawSphere(glm::vec3(meshLeftWrist4), 0.035f);
-                drawSphere(glm::vec3(meshRightWrist4), 0.035f);
 
                 glColor3f(0.7f, 0.82f, 0.95f);
                 shirtMesh.draw();
