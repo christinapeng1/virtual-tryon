@@ -1,6 +1,8 @@
 build
 .venv
+venv-tryon/
 .vscode
+.cache
 
 # large OSCAR files
 oscar/files/*.txt
