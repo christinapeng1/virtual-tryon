@@ -1,96 +1,82 @@
 #!/usr/bin/env python3
 """
-Model-based drop-in replacement for pose_tracker.py.
+Drop-in replacement for pose_tracker.py that uses the trained PoseNet
+checkpoint instead of MediaPipe.
 
-Outputs the IDENTICAL 12-value CSV format per frame:
-  lsx,lsy,rsx,rsy,lex,ley,rex,rey,lwx,lwy,rwx,rwy
+Outputs the same 21-float CSV line per frame:
+  nose_x, nose_y,
+  l_shoulder_x, l_shoulder_y, r_shoulder_x, r_shoulder_y,
+  l_elbow_x,    l_elbow_y,    r_elbow_x,    r_elbow_y,
+  l_wrist_x,    l_wrist_y,    r_wrist_x,    r_wrist_y,
+  l_hip_x,      l_hip_y,      r_hip_x,      r_hip_y,
+  yaw, visibility, world_shoulder_width
 
-To switch from MediaPipe to this model, change ONE line in pose_tracker.cpp:
-
-  // Before (MediaPipe):
-  const char* scriptPath = "../pose_tracker.py";
-
-  // After (trained model):
-  const char* scriptPath = "../pose_tracker_model.py";
-
-Coordinate convention vs. MediaPipe
--------------------------------------
-MediaPipe's landmark 11 = anatomical left shoulder.  On a horizontally-flipped
-(selfie) frame the anatomical left appears on the VISUAL RIGHT, so pose_tracker.py
-had to explicitly swap indices:
-    left_shoulder  = landmark[12]   # visual-left  is actually landmark 12
-    right_shoulder = landmark[11]   # visual-right is actually landmark 11
-
-This model was trained on pre-flipped frames (selfie orientation), so:
-    SMPL joint 16 → visual LEFT  shoulder  (no swap needed)
-    SMPL joint 17 → visual RIGHT shoulder
-    SMPL joint 18 → visual LEFT  elbow
-    SMPL joint 19 → visual RIGHT elbow
-    SMPL joint 20 → visual LEFT  wrist
-    SMPL joint 21 → visual RIGHT wrist
-
-Setup
-------
-  export POSENET_CHECKPOINT=/path/to/train/checkpoints/best.pt
-  # or edit MODEL_CHECKPOINT below
+SMPL joint index mapping used here (selfie/mirror convention):
+  0=Pelvis, 1=L_Hip, 2=R_Hip, ..., 15=Head,
+  16=L_Shoulder, 17=R_Shoulder, 18=L_Elbow, 19=R_Elbow,
+  20=L_Wrist,    21=R_Wrist
 """
 
-import os
 import sys
+import os
+import math
+import traceback
 
 os.environ["PYTHONUNBUFFERED"] = "1"
-sys.stdout = open(sys.stdout.fileno(), "w", 1)   # line-buffered stdout
+sys.stdout = open(sys.stdout.fileno(), "w", 1)
 sys.stderr = open(sys.stderr.fileno(), "w", 1)
 
-import cv2
-import torch
-import torchvision.transforms as T
-from PIL import Image
+# Add train/ to path so we can import model.py
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+TRAIN_DIR  = os.path.join(SCRIPT_DIR, "train")
+sys.path.insert(0, TRAIN_DIR)
 
-# Add train/ to path so we can import model.py without installing it
-_TRAIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "train")
-sys.path.insert(0, _TRAIN_DIR)
-
-from model import PoseNet, POSE_TRACKER_JOINTS  # noqa: E402
-
-# ── Checkpoint path ────────────────────────────────────────────────────────────
-# Override via environment variable or edit this string directly.
-MODEL_CHECKPOINT = os.environ.get(
-    "POSENET_CHECKPOINT",
-    os.path.join(_TRAIN_DIR, "checkpoints", "best.pt"),
-)
-
-if not os.path.exists(MODEL_CHECKPOINT):
-    print(
-        f"Error: model checkpoint not found at '{MODEL_CHECKPOINT}'.\n"
-        f"Set the POSENET_CHECKPOINT environment variable or train the model first.",
-        file=sys.stderr,
-        flush=True,
-    )
+try:
+    import torch
+    import torchvision.transforms as T
+    import cv2
+    from model import PoseNet, INPUT_SIZE
+except ImportError as e:
+    print(f"Error: missing dependency. {e}", file=sys.stderr, flush=True)
+    traceback.print_exc()
     sys.exit(1)
 
-# ── Load model ─────────────────────────────────────────────────────────────────
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# ── Config ────────────────────────────────────────────────────────────────────
 
-ckpt     = torch.load(MODEL_CHECKPOINT, map_location=device)
-backbone = ckpt.get("backbone", "mobilenet_v3_small")
-model    = PoseNet(backbone=backbone, pretrained=False).to(device)
-model.load_state_dict(ckpt["model"])
-model.eval()
+CHECKPOINT = os.path.join(SCRIPT_DIR, "train", "checkpoints", "best.pt")
+DEVICE     = "cuda" if torch.cuda.is_available() else "cpu"
+DEBUG      = os.environ.get("POSE_DEBUG", "0") == "1"
 
-print(f"PoseNet ({backbone}) loaded from {MODEL_CHECKPOINT}", file=sys.stderr, flush=True)
-print(f"Device: {device}", file=sys.stderr, flush=True)
+# ImageNet normalisation — must match training preprocessing
+_MEAN = [0.485, 0.456, 0.406]
+_STD  = [0.229, 0.224, 0.225]
 
-# ── Pre-processing (must match training) ──────────────────────────────────────
-# Resize to 192×256 (H×W), convert to tensor, apply ImageNet normalisation.
-preprocess = T.Compose([
-    T.Resize((192, 256), antialias=True),
+TRANSFORM = T.Compose([
     T.ToTensor(),
-    T.Normalize(mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225]),
+    T.Normalize(_MEAN, _STD),
 ])
 
-# ── Camera ─────────────────────────────────────────────────────────────────────
+# ── Load model ────────────────────────────────────────────────────────────────
+
+print(f"Loading PoseNet ({BACKBONE}) from {CHECKPOINT} …", file=sys.stderr, flush=True)
+
+try:
+    ckpt     = torch.load(CHECKPOINT, map_location=DEVICE)
+    backbone = ckpt.get("backbone", "mobilenet_v3_small")
+    print(f"Checkpoint backbone: {backbone}", file=sys.stderr, flush=True)
+
+    model = PoseNet(backbone=backbone, pretrained=False).to(DEVICE)
+    state = ckpt.get("model_state_dict", ckpt.get("model", ckpt))
+    model.load_state_dict(state)
+    model.eval()
+    print("Model loaded.", file=sys.stderr, flush=True)
+except Exception as e:
+    print(f"Error loading checkpoint: {e}", file=sys.stderr, flush=True)
+    traceback.print_exc()
+    sys.exit(1)
+
+# ── Camera ────────────────────────────────────────────────────────────────────
+
 cap = cv2.VideoCapture(0)
 if not cap.isOpened():
     print("Error: Could not open camera", file=sys.stderr, flush=True)
@@ -100,40 +86,134 @@ cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 cap.set(cv2.CAP_PROP_BUFFERSIZE,   1)
 
-# ── Inference loop ─────────────────────────────────────────────────────────────
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
+H_IN, W_IN = INPUT_SIZE   # (192, 256) — must match training
 
-    # Selfie flip — exactly as in training data (preprocess.py)
-    frame = cv2.flip(frame, 1)
+# ── Inference loop ────────────────────────────────────────────────────────────
 
-    # BGR → RGB PIL image → normalised tensor
-    rgb    = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    tensor = preprocess(Image.fromarray(rgb)).unsqueeze(0).to(device)
+with torch.inference_mode():
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-    with torch.no_grad():
-        joints = model(tensor)[0].cpu().numpy()  # (24, 2)
+        # Selfie view — matches training data orientation
+        frame = cv2.flip(frame, 1)
 
-    # Index directly by SMPL joint number — no swapping needed.
-    # (See module docstring for why this differs from pose_tracker.py.)
-    ls = joints[POSE_TRACKER_JOINTS["left_shoulder"]]   # SMPL 16
-    rs = joints[POSE_TRACKER_JOINTS["right_shoulder"]]  # SMPL 17
-    le = joints[POSE_TRACKER_JOINTS["left_elbow"]]      # SMPL 18
-    re = joints[POSE_TRACKER_JOINTS["right_elbow"]]     # SMPL 19
-    lw = joints[POSE_TRACKER_JOINTS["left_wrist"]]      # SMPL 20
-    rw = joints[POSE_TRACKER_JOINTS["right_wrist"]]     # SMPL 21
+        # Resize to model input size (H×W = 192×256)
+        resized = cv2.resize(frame, (W_IN, H_IN))
+        rgb     = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
 
-    # Output format is identical to pose_tracker.py — pose_tracker.cpp reads
-    # this with sscanf(buf, "%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f", ...)
-    print(
-        f"{ls[0]:.4f},{ls[1]:.4f},"
-        f"{rs[0]:.4f},{rs[1]:.4f},"
-        f"{le[0]:.4f},{le[1]:.4f},"
-        f"{re[0]:.4f},{re[1]:.4f},"
-        f"{lw[0]:.4f},{lw[1]:.4f},"
-        f"{rw[0]:.4f},{rw[1]:.4f}"
-    )
+        # PIL-free path: convert numpy HWC uint8 → CHW float tensor manually
+        from PIL import Image
+        pil = Image.fromarray(rgb)
+        inp = TRANSFORM(pil).unsqueeze(0).to(DEVICE)   # (1, 3, H, W)
+
+        joints = model(inp).squeeze(0).cpu().numpy()   # (24, 2)  values in [0,1]
+
+        # ── Extract required joints ───────────────────────────────────────────
+        # SMPL joint indices (selfie convention, no swap needed)
+        HEAD  = 15
+        LS, RS = 16, 17   # visual left/right shoulder
+        LE, RE = 18, 19
+        LW, RW = 20, 21
+        LH, RH =  1,  2   # L_Hip, R_Hip
+
+        nx,  ny  = joints[HEAD]
+        lsx, lsy = joints[LS]
+        rsx, rsy = joints[RS]
+        lex, ley = joints[LE]
+        rex, rey = joints[RE]
+        lwx, lwy = joints[LW]
+        rwx, rwy = joints[RW]
+        lhx, lhy = joints[LH]
+        rhx, rhy = joints[RH]
+
+        # ── Derived fields ────────────────────────────────────────────────────
+        # Yaw: approximate from shoulder horizontal separation relative to
+        # a reference width.  Positive = turned right.
+        shoulder_dx = rsx - lsx
+        shoulder_dy = rsy - lsy
+        yaw = math.degrees(math.atan2(shoulder_dy, shoulder_dx))
+
+        visibility = 1.0   # no per-landmark confidence from this model
+
+        # World shoulder width: rough estimate — wider pixel gap ≈ facing camera
+        # Normalise pixel width by frame width fraction; scale to ~0.4 m typical
+        world_shoulder_width = max(shoulder_dx * 0.8, 0.15)
+
+        print(
+            f"{nx:.4f},{ny:.4f},"
+            f"{lsx:.4f},{lsy:.4f},"
+            f"{rsx:.4f},{rsy:.4f},"
+            f"{lex:.4f},{ley:.4f},"
+            f"{rex:.4f},{rey:.4f},"
+            f"{lwx:.4f},{lwy:.4f},"
+            f"{rwx:.4f},{rwy:.4f},"
+            f"{lhx:.4f},{lhy:.4f},"
+            f"{rhx:.4f},{rhy:.4f},"
+            f"{yaw:.4f},{visibility:.4f},{world_shoulder_width:.4f}"
+        )
+        sys.stdout.flush()
+
+        # ── Debug visualization ───────────────────────────────────────────────
+        if DEBUG:
+            vis = cv2.resize(frame, (W_IN, H_IN)).copy()
+            h_vis, w_vis = vis.shape[:2]
+
+            JOINT_COLORS = {
+                "head":       (255, 255,   0),
+                "l_shoulder": (  0, 255,   0),
+                "r_shoulder": (  0, 255,   0),
+                "l_elbow":    (  0, 255, 255),
+                "r_elbow":    (  0, 255, 255),
+                "l_wrist":    (  0, 128, 255),
+                "r_wrist":    (  0, 128, 255),
+                "l_hip":      (255,   0, 255),
+                "r_hip":      (255,   0, 255),
+            }
+            named = [
+                ("head",       nx,  ny),
+                ("l_shoulder", lsx, lsy),
+                ("r_shoulder", rsx, rsy),
+                ("l_elbow",    lex, ley),
+                ("r_elbow",    rex, rey),
+                ("l_wrist",    lwx, lwy),
+                ("r_wrist",    rwx, rwy),
+                ("l_hip",      lhx, lhy),
+                ("r_hip",      rhx, rhy),
+            ]
+            # Skeleton edges to draw
+            edges = [
+                ("l_shoulder", "r_shoulder"),
+                ("l_shoulder", "l_elbow"),
+                ("l_elbow",    "l_wrist"),
+                ("r_shoulder", "r_elbow"),
+                ("r_elbow",    "r_wrist"),
+                ("l_shoulder", "l_hip"),
+                ("r_shoulder", "r_hip"),
+                ("l_hip",      "r_hip"),
+                ("head",       "l_shoulder"),
+                ("head",       "r_shoulder"),
+            ]
+            coords = {name: (int(x * w_vis), int(y * h_vis)) for name, x, y in named}
+
+            for a, b in edges:
+                cv2.line(vis, coords[a], coords[b], (180, 180, 180), 1)
+
+            for name, x, y in named:
+                px, py = int(x * w_vis), int(y * h_vis)
+                color  = JOINT_COLORS.get(name, (255, 255, 255))
+                cv2.circle(vis, (px, py), 5, color, -1)
+                cv2.putText(vis, f"{name} ({x:.2f},{y:.2f})",
+                            (px + 6, py), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.32, color, 1, cv2.LINE_AA)
+
+            cv2.putText(vis, f"yaw={yaw:.1f} wsw={world_shoulder_width:.2f}",
+                        (4, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+            cv2.imshow("PoseNet debug", vis)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
 
 cap.release()
+if DEBUG:
+    cv2.destroyAllWindows()

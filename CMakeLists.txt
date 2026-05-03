@@ -29,6 +29,7 @@ target_link_libraries(main
     OpenGL::GL
     ${OpenCV_LIBS}
     ${ASSIMP_LIBRARY}
+    glm::glm
 )
 
 add_executable(calibration calibration.cpp src/mesh.cpp)
@@ -40,4 +41,5 @@ target_link_libraries(calibration
     OpenGL::GL
     ${OpenCV_LIBS}
     ${ASSIMP_LIBRARY}
+    glm::glm
 )

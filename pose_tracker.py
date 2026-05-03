@@ -12,14 +12,12 @@ sys.stdout = open(sys.stdout.fileno(), "w", 1)
 sys.stderr = open(sys.stderr.fileno(), "w", 1)
 
 try:
-    from mediapipe import solutions
     import mediapipe as mp
-except ImportError as e:
+    mp_pose = mp.solutions.pose
+except (ImportError, AttributeError) as e:
     print(f"Error: MediaPipe not installed properly. {e}", file=sys.stderr, flush=True)
     traceback.print_exc()
     sys.exit(1)
-
-mp_pose = solutions.pose
 
 cap = cv2.VideoCapture(0)
 

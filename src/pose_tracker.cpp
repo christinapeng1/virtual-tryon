@@ -20,8 +20,15 @@ PoseTracker::~PoseTracker() {
 }
 
 bool PoseTracker::init() {
-    const char* scriptPath = "../pose_tracker.py";
-    std::string cmd = std::string("python3 ") + scriptPath;
+    // Set POSE_BACKEND=model to use the trained PoseNet checkpoint,
+    // or leave unset (default) to use MediaPipe.
+    const char* backend = std::getenv("POSE_BACKEND");
+    const char* scriptPath = (backend && std::string(backend) == "model")
+        ? "../pose_tracker_model.py"
+        : "../pose_tracker.py";
+    const char* venv = std::getenv("VIRTUAL_ENV");
+    std::string pythonBin = venv ? std::string(venv) + "/bin/python3" : "python3";
+    std::string cmd = pythonBin + " " + scriptPath;
 
     pipe = popen(cmd.c_str(), "r");
     if (!pipe) {
