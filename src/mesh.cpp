@@ -10,6 +10,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include <opencv2/opencv.hpp>
 
 namespace {
 
@@ -389,6 +390,46 @@ Mesh loadMesh(const std::string& path) {
                     mesh.indices.push_back(baseIdx + face.mIndices[0]);
                     mesh.indices.push_back(baseIdx + face.mIndices[1]);
                     mesh.indices.push_back(baseIdx + face.mIndices[2]);
+                }
+            }
+
+            if (!mesh.hasTexture && scene->mNumMaterials > 0) {
+                const aiMaterial* mat = scene->mMaterials[aMesh->mMaterialIndex];
+                aiString texPath;
+                if (mat->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS) {
+                    // Check if it's an embedded texture (GLB stores textures this way)
+                    const aiTexture* embTex = scene->GetEmbeddedTexture(texPath.C_Str());
+                    if (embTex) {
+                        cv::Mat img;
+                        if (embTex->mHeight == 0) {
+                            // Compressed (PNG/JPG) — decode from memory
+                            std::vector<uchar> buf(
+                                (uchar*)embTex->pcData,
+                                (uchar*)embTex->pcData + embTex->mWidth
+                            );
+                            img = cv::imdecode(buf, cv::IMREAD_COLOR);
+                            cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
+                        } else {
+                            // Raw ARGB8888
+                            img = cv::Mat(embTex->mHeight, embTex->mWidth, CV_8UC4, embTex->pcData);
+                            cv::cvtColor(img, img, cv::COLOR_BGRA2RGBA);
+                        }
+
+                        if (!img.empty()) {
+                            glGenTextures(1, &mesh.textureId);
+                            glBindTexture(GL_TEXTURE_2D, mesh.textureId);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                            GLenum fmt = (img.channels() == 4) ? GL_RGBA : GL_RGB;
+                            glTexImage2D(GL_TEXTURE_2D, 0, fmt,
+                                        img.cols, img.rows, 0,
+                                        fmt, GL_UNSIGNED_BYTE, img.data);
+                            glBindTexture(GL_TEXTURE_2D, 0);
+                            mesh.hasTexture = true;
+                        }
+                    }
                 }
             }
         }

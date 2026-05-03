@@ -323,9 +323,9 @@ int main(int argc, char** argv) {
     glShadeModel(GL_SMOOTH);
 
     GLfloat lightPos[] = {0.0f, 0.0f, 1.0f, 0.0f}; // directional light from camera
-    GLfloat lightAmbient[] = {0.45f, 0.45f, 0.45f, 1.0f};
-    GLfloat lightDiffuse[] = {0.95f, 0.95f, 0.95f, 1.0f};
-    GLfloat lightSpecular[] = {0.20f, 0.20f, 0.20f, 1.0f};
+    GLfloat lightAmbient[] = {0.2f, 0.2f, 0.2f, 1.0f};
+    GLfloat lightDiffuse[] = {0.65f, 0.65f, 0.65f, 1.0f};
+    GLfloat lightSpecular[] = {0.10f, 0.10f, 0.10f, 1.0f};
 
     glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
     glLightfv(GL_LIGHT0, GL_AMBIENT, lightAmbient);
@@ -629,8 +629,18 @@ int main(int argc, char** argv) {
 
                 shirtMesh.uploadDeformedVertices();
 
-                glColor3f(0.7f, 0.82f, 0.95f);
+                if (shirtMesh.hasTexture) {
+                    glEnable(GL_TEXTURE_2D);
+                    glBindTexture(GL_TEXTURE_2D, shirtMesh.textureId);
+                }
+
+                glColor3f(1.0f, 1.0f, 1.0f);
                 shirtMesh.draw();
+
+                if (shirtMesh.hasTexture) {
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                    glDisable(GL_TEXTURE_2D);
+                }
             }
         }
 
