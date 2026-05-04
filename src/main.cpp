@@ -308,7 +308,6 @@ int main(int argc, char** argv) {
 
     cv::flip(frame, frame, 1);
     cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-    cv::resize(frame, frame, cv::Size(initW, initH));
 
     GLuint camTex = 0;
     glGenTextures(1, &camTex);
@@ -318,7 +317,8 @@ int main(int argc, char** argv) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, initW, initH, 0, GL_RGB, GL_UNSIGNED_BYTE, frame.data);
+    // glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, initW, initH, 0, GL_RGB, GL_UNSIGNED_BYTE, frame.data);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame.cols, frame.rows, 0, GL_RGB, GL_UNSIGNED_BYTE, frame.data);
 
     Mesh shirtMesh = loadMesh(meshPath);
     loadCalibrationIfAvailable(shirtMesh, calibrationPath);
@@ -492,10 +492,9 @@ ImGui::SliderFloat("Adjust Size", &sizeMultiplier, 1.0f, 1.8f);
 
         cv::flip(frame, frame, 1);
         cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-        cv::resize(frame, frame, cv::Size(w, h));
 
         glBindTexture(GL_TEXTURE_2D, camTex);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, frame.data);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame.cols, frame.rows, 0, GL_RGB, GL_UNSIGNED_BYTE, frame.data);
 
         glm::vec3 wsLS = screenToWorld(leftShoulder, depth, aspect);
         glm::vec3 wsRS = screenToWorld(rightShoulder, depth, aspect);
@@ -506,6 +505,20 @@ ImGui::SliderFloat("Adjust Size", &sizeMultiplier, 1.0f, 1.8f);
         glm::vec3 wsLH = screenToWorld(leftHip, depth, aspect);
         glm::vec3 wsRH = screenToWorld(rightHip, depth, aspect);
         glm::vec3 wsNose = screenToWorld(nose, depth, aspect);
+
+        float camAspect = frame.cols / (float)frame.rows;
+        float winAspect = w / (float)h;
+
+        float u0 = 0.0f, u1 = 1.0f, v0 = 0.0f, v1 = 1.0f;
+        if (camAspect > winAspect) {
+            float visibleU = winAspect / camAspect;
+            u0 = (1.0f - visibleU) * 0.5f;
+            u1 = 1.0f - u0;
+        } else {
+            float visibleV = camAspect / winAspect;
+            v0 = (1.0f - visibleV) * 0.5f;
+            v1 = 1.0f - v0;
+        }
 
         if (!smoothingInitialized) {
             sLS = wsLS; sRS = wsRS; sLE = wsLE; sRE = wsRE;
@@ -548,10 +561,14 @@ ImGui::SliderFloat("Adjust Size", &sizeMultiplier, 1.0f, 1.8f);
         glColor3f(1.0f, 1.0f, 1.0f);
 
         glBegin(GL_QUADS);
-            glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
-            glTexCoord2f(1.0f, 0.0f); glVertex2f((GLfloat)w, 0.0f);
-            glTexCoord2f(1.0f, 1.0f); glVertex2f((GLfloat)w, (GLfloat)h);
-            glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, (GLfloat)h);
+            // glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
+            // glTexCoord2f(1.0f, 0.0f); glVertex2f((GLfloat)w, 0.0f);
+            // glTexCoord2f(1.0f, 1.0f); glVertex2f((GLfloat)w, (GLfloat)h);
+            // glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, (GLfloat)h);
+            glTexCoord2f(u0, v0); glVertex2f(0,0);
+            glTexCoord2f(u1, v0); glVertex2f((float)w, 0);
+            glTexCoord2f(u1, v1); glVertex2f((float)w, (float)h);
+            glTexCoord2f(u0, v1); glVertex2f(0, (float)h);
         glEnd();
 
         glDisable(GL_TEXTURE_2D);

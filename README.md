@@ -2,6 +2,7 @@
 
 mkdir -p build
 cd build
+git clone https://github.com/ocornut/imgui.git 
 cmake .. && make
 ./main
 
