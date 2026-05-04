@@ -251,15 +251,6 @@ static bool saveCalibrationJson(const std::string& path, const CalibrationData& 
     out << "  \"rightElbowVertex\": " << c.rightElbow.vertex << ",\n";
     out << "  \"rightWristVertex\": " << c.rightWrist.vertex << ",\n";
 
-    out << "  \"virtualAnchors\": {\n";
-    out << "    \"leftShoulder\": " << (c.leftShoulder.isVirtual ? "true" : "false") << ",\n";
-    out << "    \"leftElbow\": " << (c.leftElbow.isVirtual ? "true" : "false") << ",\n";
-    out << "    \"leftWrist\": " << (c.leftWrist.isVirtual ? "true" : "false") << ",\n";
-    out << "    \"rightShoulder\": " << (c.rightShoulder.isVirtual ? "true" : "false") << ",\n";
-    out << "    \"rightElbow\": " << (c.rightElbow.isVirtual ? "true" : "false") << ",\n";
-    out << "    \"rightWrist\": " << (c.rightWrist.isVirtual ? "true" : "false") << "\n";
-    out << "  },\n";
-
     out << "  \"anchors\": {\n";
     out << "    \"leftShoulder\": [" << P(c.leftShoulder).x << ", " << P(c.leftShoulder).y << ", " << P(c.leftShoulder).z << "],\n";
     out << "    \"leftElbow\": [" << P(c.leftElbow).x << ", " << P(c.leftElbow).y << ", " << P(c.leftElbow).z << "],\n";
