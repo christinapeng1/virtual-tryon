@@ -5,7 +5,7 @@
 #include <limits>
 #include <algorithm>
 #include <cmath>
-
+#include <filesystem>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -58,6 +58,16 @@ static const char* kStageNames[6] = {
     "Click RIGHT ELBOW area",
     "Click RIGHT WRIST / cuff area"
 };
+
+static std::string getMeshBaseName(const std::string& path) {
+    std::filesystem::path p(path);
+    return p.stem().string();
+}
+
+static std::string getCalibrationPath(const std::string& meshPath) {
+    std::string name = getMeshBaseName(meshPath);
+    return "../calibrations/calibration_" + name + ".json";
+}
 
 static std::vector<std::vector<int>> buildAdjacency(const Mesh& mesh) {
     std::vector<std::vector<int>> adj(mesh.bindVertices.size());
@@ -245,7 +255,7 @@ static void drawMarker(const glm::vec3& p, float r) {
     glPopMatrix();
 }
 
-int main() {
+int main(int argc, char** argv) {
     if (!glfwInit()) return -1;
 
     GLFWwindow* window = glfwCreateWindow(1280, 900, "Garment Calibration", nullptr, nullptr);
@@ -257,7 +267,19 @@ int main() {
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 
-    Mesh mesh = loadMesh("../meshes/jeans_denim_jacket.glb");
+    if (argc < 2) {
+        std::cerr << "Usage: ./calibrate <mesh_path>\n";
+        std::cerr << "Example: ./calibrate ../meshes/t-shirt.glb\n";
+        return -1;
+    }
+
+    std::string meshPath = argv[1];
+    std::string calibrationPath = getCalibrationPath(meshPath);
+
+    std::cout << "Loading mesh: " << meshPath << "\n";
+    std::cout << "Calibration file will be: " << calibrationPath << "\n";
+
+    Mesh mesh = loadMesh(meshPath);
     if (!mesh.isValid) {
         std::cerr << "Failed to load mesh.\n";
         return -1;
@@ -348,7 +370,7 @@ int main() {
 
         if (stage == 6 && glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS) {
             CalibrationData c = computeCalibration(mesh, picked[0], picked[1], picked[2], picked[3], picked[4], picked[5]);
-            if (saveCalibrationJson("calibration.json", mesh, c)) {
+            if (saveCalibrationJson(calibrationPath, mesh, c)) {
                 std::cout << "Saved calibration.json\n";
             } else {
                 std::cout << "Failed to save calibration.json\n";

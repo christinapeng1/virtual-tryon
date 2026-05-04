@@ -44,6 +44,11 @@ struct Mesh {
     glm::vec3 leftWristPos{-0.58f, -0.08f, 0.0f};
     glm::vec3 rightWristPos{ 0.58f, -0.08f, 0.0f};
 
+    GLuint textureId = 0;
+    bool hasTexture = false;
+    glm::vec4 materialColor{1.0f, 1.0f, 1.0f, 1.0f};
+    bool hasMaterialColor = false;
+
     void findShoulders();
     void buildAdjacency();
     void computeRegionsFromAnchors();

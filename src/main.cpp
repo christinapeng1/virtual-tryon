@@ -3,7 +3,7 @@
 #include <cmath>
 #include <fstream>
 #include <sstream>
-
+#include <filesystem>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -14,6 +14,16 @@
 #include "mesh.h"
 #include "pose_tracker.h"
 #include "utils.h"
+
+static std::string meshBaseNameFromPath(const std::string& meshPath) {
+    std::filesystem::path p(meshPath);
+    return p.stem().string();
+}
+
+static std::string calibrationPathForMesh(const std::string& meshPath) {
+    std::string name = meshBaseNameFromPath(meshPath);
+    return "../calibrations/calibration_" + name + ".json";
+}
 
 static glm::vec3 smoothVec3(const glm::vec3& prev, const glm::vec3& curr, float alpha) {
     return prev * (1.0f - alpha) + curr * alpha;
@@ -230,8 +240,20 @@ static void loadCalibrationIfAvailable(Mesh& mesh, const std::string& path) {
     std::cout << "Calibration loaded successfully\n";
 }
 
-int main() {
+int main(int argc, char** argv) {
     std::cout << "Initializing...\n";
+
+    if (argc < 2) {
+        std::cerr << "Usage: ./main <mesh_path>\n";
+        std::cerr << "Example: ./main ../meshes/t-shirt.glb\n";
+        return -1;
+    }
+
+    std::string meshPath = argv[1];
+    std::string calibrationPath = calibrationPathForMesh(meshPath);
+
+    std::cout << "Mesh: " << meshPath << "\n";
+    std::cout << "Calibration: " << calibrationPath << "\n";
 
     if (!glfwInit()) return -1;
 
@@ -285,8 +307,8 @@ int main() {
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame.cols, frame.rows, 0, GL_RGB, GL_UNSIGNED_BYTE, frame.data);
 
-    Mesh shirtMesh = loadMesh("../meshes/jeans_denim_jacket.glb");
-    loadCalibrationIfAvailable(shirtMesh, "calibration.json");
+    Mesh shirtMesh = loadMesh(meshPath);
+    loadCalibrationIfAvailable(shirtMesh, calibrationPath);
 
     float meshVerticalHeight = getMeshVerticalHeight(shirtMesh);
 
@@ -300,9 +322,9 @@ int main() {
     glShadeModel(GL_SMOOTH);
 
     GLfloat lightPos[] = {0.0f, 0.0f, 1.0f, 0.0f}; // directional light from camera
-    GLfloat lightAmbient[] = {0.45f, 0.45f, 0.45f, 1.0f};
-    GLfloat lightDiffuse[] = {0.95f, 0.95f, 0.95f, 1.0f};
-    GLfloat lightSpecular[] = {0.20f, 0.20f, 0.20f, 1.0f};
+    GLfloat lightAmbient[] = {0.2f, 0.2f, 0.2f, 1.0f};
+    GLfloat lightDiffuse[] = {0.65f, 0.65f, 0.65f, 1.0f};
+    GLfloat lightSpecular[] = {0.10f, 0.10f, 0.10f, 1.0f};
 
     glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
     glLightfv(GL_LIGHT0, GL_AMBIENT, lightAmbient);
@@ -619,8 +641,18 @@ int main() {
 
                 shirtMesh.uploadDeformedVertices();
 
-                glColor3f(0.7f, 0.82f, 0.95f);
+                if (shirtMesh.hasTexture) {
+                    glEnable(GL_TEXTURE_2D);
+                    glBindTexture(GL_TEXTURE_2D, shirtMesh.textureId);
+                }
+
+                glColor3f(1.0f, 1.0f, 1.0f);
                 shirtMesh.draw();
+
+                if (shirtMesh.hasTexture) {
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                    glDisable(GL_TEXTURE_2D);
+                }
             }
         }
 
