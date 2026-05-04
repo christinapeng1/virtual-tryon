@@ -45,7 +45,7 @@ EOF
 
 PREPROCESSED="${HOME}/scratch/virtual-tryon/surreal_preprocessed"
 # Allow override via environment variable for parallel runs
-CHECKPOINTS="${CHECKPOINTS_DIR:-${HOME}/scratch/virtual-tryon/posenet_checkpoints}"
+CHECKPOINTS="${CHECKPOINTS_DIR:-${HOME}/scratch/virtual-tryon/posenet_checkpoints_large}"
 mkdir -p "$CHECKPOINTS"
 echo "Checkpoints: $CHECKPOINTS"
 
@@ -59,7 +59,7 @@ python "${SLURM_SUBMIT_DIR}/train/train.py" \
     --train_csv "${PREPROCESSED}/index_train.csv" \
     --val_csv   "${PREPROCESSED}/index_val.csv"   \
     --out_dir   "${CHECKPOINTS}"                  \
-    --backbone  mobilenet_v3_small                \
+    --backbone  mobilenet_v3_large                \
     --epochs    30                                \
     --batch     128                               \
     --workers   2                                 \

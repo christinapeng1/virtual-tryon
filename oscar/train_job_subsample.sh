@@ -41,7 +41,7 @@ else:
 EOF
 
 PREPROCESSED="${HOME}/scratch/virtual-tryon/surreal_preprocessed"
-CHECKPOINTS="${HOME}/scratch/virtual-tryon/posenet_checkpoints_sub"
+CHECKPOINTS="${HOME}/scratch/virtual-tryon/posenet_checkpoints_sub20_large"
 mkdir -p "$CHECKPOINTS"
 echo "Checkpoints: $CHECKPOINTS"
 
@@ -56,7 +56,7 @@ python "${SLURM_SUBMIT_DIR}/train/train_subsample.py" \
     --val_csv   "${PREPROCESSED}/index_val.csv"   \
     --out_dir   "${CHECKPOINTS}"                  \
     --subsample 0.20                              \
-    --backbone  mobilenet_v3_small                \
+    --backbone  mobilenet_v3_large                \
     --epochs    30                                \
     --batch     128                               \
     --workers   8                                 \
