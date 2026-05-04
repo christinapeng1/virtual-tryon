@@ -1,53 +1,67 @@
+
 #ifndef MESH_H
 #define MESH_H
 
 #include <vector>
+#include <string>
 #include <glm/glm.hpp>
-#include <GLFW/glfw3.h>
+
+#ifdef __APPLE__
+#include <OpenGL/gl.h>
+#else
+#include <GL/gl.h>
+#endif
 
 struct Vertex {
-    glm::vec3 position;
-    glm::vec3 normal;
+    glm::vec3 position{0.0f};
+    glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    glm::vec2 uv{0.0f};
+};
+
+enum VertexRegion {
+    REGION_UNKNOWN = 0,
+    REGION_TORSO,
+    REGION_LEFT_UPPER_SLEEVE,
+    REGION_LEFT_LOWER_SLEEVE,
+    REGION_RIGHT_UPPER_SLEEVE,
+    REGION_RIGHT_LOWER_SLEEVE
 };
 
 struct Mesh {
+    bool isValid = false;
+
+    std::vector<Vertex> bindVertices;
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
-    bool isValid = false;
-    glm::vec3 leftShoulderPos{0, 0, 0};
-    glm::vec3 rightShoulderPos{0, 0, 0};
 
-    void findShoulders() {
-        if (vertices.empty()) return;
+    std::vector<std::vector<int>> adjacency;
+    std::vector<int> vertexRegion;
 
-        float maxY = -1e9f;
-        glm::vec3 minPos = vertices[0].position;
-        glm::vec3 maxPos = vertices[0].position;
+    glm::vec3 leftShoulderPos{-0.25f, 0.20f, 0.0f};
+    glm::vec3 rightShoulderPos{ 0.25f, 0.20f, 0.0f};
+    glm::vec3 leftElbowPos{-0.45f, 0.05f, 0.0f};
+    glm::vec3 rightElbowPos{ 0.45f, 0.05f, 0.0f};
+    glm::vec3 leftWristPos{-0.58f, -0.08f, 0.0f};
+    glm::vec3 rightWristPos{ 0.58f, -0.08f, 0.0f};
 
-        for (const auto& v : vertices) {
-            minPos = glm::min(minPos, v.position);
-            maxPos = glm::max(maxPos, v.position);
-            maxY = std::max(maxY, v.position.y);
-        }
+    GLuint textureId = 0;
+    bool hasTexture = false;
+    glm::vec4 materialColor{1.0f, 1.0f, 1.0f, 1.0f};
+    bool hasMaterialColor = false;
 
-        float shoulderY = maxY - (maxPos.y - minPos.y) * 0.1f;
-        leftShoulderPos = {maxPos.x, shoulderY, 0.0f};
-        rightShoulderPos  = {minPos.x, shoulderY, 0.0f};
-    }
+    void findShoulders();
+    void buildAdjacency();
+    void computeRegionsFromAnchors();
 
-    void draw() {
-        if (!isValid || vertices.empty() || indices.empty()) return;
+    void resetToBindPose();
+    void uploadDeformedVertices();
+    void draw() const;
 
-        glEnableClientState(GL_VERTEX_ARRAY);
-        glEnableClientState(GL_NORMAL_ARRAY);
-
-        glVertexPointer(3, GL_FLOAT, sizeof(Vertex), &vertices[0].position);
-        glNormalPointer(GL_FLOAT, sizeof(Vertex), &vertices[0].normal);
-        glDrawElements(GL_TRIANGLES, (GLsizei)indices.size(), GL_UNSIGNED_INT, indices.data());
-
-        glDisableClientState(GL_NORMAL_ARRAY);
-        glDisableClientState(GL_VERTEX_ARRAY);
-    }
+private:
+    mutable GLuint displayListId = 0;
+    mutable bool displayListDirty = true;
 };
 
-#endif // MESH_H
+Mesh loadMesh(const std::string& path);
+
+#endif

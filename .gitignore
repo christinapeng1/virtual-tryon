@@ -1,3 +1,21 @@
 build
 .venv
+venv-tryon/
 .vscode
+.cache
+
+# large OSCAR files
+oscar/files/*.txt
+*.mat
+*.mp4
+surreal_data/
+
+# Training outputs
+output/
+checkpoints/
+*.pth
+*.onnx
+*.log
+
+*.out
+*.err
