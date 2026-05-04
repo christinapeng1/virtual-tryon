@@ -43,7 +43,7 @@ except ImportError as e:
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-CHECKPOINT = os.path.join(SCRIPT_DIR, "train", "checkpoints", "best.pt")
+CHECKPOINT = os.path.join(SCRIPT_DIR, "train", "checkpoints-full", "best.pt")
 DEVICE     = "cuda" if torch.cuda.is_available() else "cpu"
 DEBUG      = os.environ.get("POSE_DEBUG", "0") == "1"
 
@@ -58,7 +58,7 @@ TRANSFORM = T.Compose([
 
 # ── Load model ────────────────────────────────────────────────────────────────
 
-print(f"Loading PoseNet ({BACKBONE}) from {CHECKPOINT} …", file=sys.stderr, flush=True)
+print(f"Loading PoseNet from {CHECKPOINT} …", file=sys.stderr, flush=True)
 
 try:
     ckpt     = torch.load(CHECKPOINT, map_location=DEVICE)
@@ -111,12 +111,14 @@ with torch.inference_mode():
         joints = model(inp).squeeze(0).cpu().numpy()   # (24, 2)  values in [0,1]
 
         # ── Extract required joints ───────────────────────────────────────────
-        # SMPL joint indices (selfie convention, no swap needed)
+        # SMPL joint indices in selfie/mirror convention (training data pre-flipped).
+        # joint 16 = L_Shoulder should be on visual LEFT of selfie frame.
+        # If the shirt appears mirrored, swap LS/RS and LE/RE and LW/RW below.
         HEAD  = 15
-        LS, RS = 16, 17   # visual left/right shoulder
-        LE, RE = 18, 19
-        LW, RW = 20, 21
-        LH, RH =  1,  2   # L_Hip, R_Hip
+        LS, RS = 17, 16   # R_Shoulder appears on visual left after selfie flip
+        LE, RE = 19, 18
+        LW, RW = 21, 20
+        LH, RH =  2,  1
 
         nx,  ny  = joints[HEAD]
         lsx, lsy = joints[LS]
