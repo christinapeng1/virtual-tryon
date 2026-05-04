@@ -1,0 +1,4 @@
+/Users/robertogonzales/Desktop/CV/virtual-tryon/external/CMakeFiles/main.dir
+/Users/robertogonzales/Desktop/CV/virtual-tryon/external/CMakeFiles/calibration.dir
+/Users/robertogonzales/Desktop/CV/virtual-tryon/external/CMakeFiles/edit_cache.dir
+/Users/robertogonzales/Desktop/CV/virtual-tryon/external/CMakeFiles/rebuild_cache.dir

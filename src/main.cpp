@@ -10,11 +10,16 @@
 
 #include <GLFW/glfw3.h>
 #include <opencv2/opencv.hpp>
-
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl2.h"
 #include "mesh.h"
 #include "pose_tracker.h"
 #include "utils.h"
-
+static bool colorTintEnabled = false;
+static float tintColor[3] = {1.0f, 1.0f, 1.0f};
+static float verticalOffset = 0.5f;
+static float sizeMultiplier = 1.35f;
 static std::string meshBaseNameFromPath(const std::string& meshPath) {
     std::filesystem::path p(meshPath);
     return p.stem().string();
@@ -270,7 +275,14 @@ int main(int argc, char** argv) {
 
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
 
+    ImGui::StyleColorsDark();
+
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL2_Init();
     cv::VideoCapture camera(0);
     if (!camera.isOpened()) {
         std::cerr << "Camera failed\n";
@@ -328,8 +340,30 @@ int main(int argc, char** argv) {
     GLfloat lightSpecular[] = {0.10f, 0.10f, 0.10f, 1.0f};
 
     glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
-    glLightfv(GL_LIGHT0, GL_AMBIENT, lightAmbient);
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, lightDiffuse);
+    if (colorTintEnabled) {
+        GLfloat tintedAmbient[] = {
+            0.2f * tintColor[0],
+            0.2f * tintColor[1],
+            0.2f * tintColor[2],
+            1.0f
+        };
+
+        GLfloat tintedDiffuse[] = {
+            0.65f * tintColor[0],
+            0.65f * tintColor[1],
+            0.65f * tintColor[2],
+            1.0f
+        };
+
+        glLightfv(GL_LIGHT0, GL_AMBIENT, tintedAmbient);
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, tintedDiffuse);
+    } else {
+        GLfloat originalAmbient[] = {0.2f, 0.2f, 0.2f, 1.0f};
+        GLfloat originalDiffuse[] = {0.65f, 0.65f, 0.65f, 1.0f};
+
+        glLightfv(GL_LIGHT0, GL_AMBIENT, originalAmbient);
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, originalDiffuse);
+    }
     glLightfv(GL_LIGHT0, GL_SPECULAR, lightSpecular);
 
     PoseTracker tracker;
@@ -367,6 +401,45 @@ int main(int argc, char** argv) {
             continue;
         }
 
+        ImGui_ImplOpenGL2_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        ImGui::Begin("Mesh Controls");
+        ImGui::SeparatorText("Size");
+
+if (ImGui::Button("XS")) sizeMultiplier = 1.15f;
+ImGui::SameLine();
+if (ImGui::Button("S")) sizeMultiplier = 1.25f;
+ImGui::SameLine();
+if (ImGui::Button("M")) sizeMultiplier = 1.35f;
+ImGui::SameLine();
+if (ImGui::Button("L")) sizeMultiplier = 1.48f;
+ImGui::SameLine();
+if (ImGui::Button("XL")) sizeMultiplier = 1.62f;
+
+// fine tuning
+ImGui::SliderFloat("Adjust Size", &sizeMultiplier, 1.0f, 1.8f);
+        ImGui::SeparatorText("Fit");
+
+        ImGui::SliderFloat("Vertical Offset", &verticalOffset, -0.3f, 1.f);
+        if (ImGui::Button("Reset Position")) {
+            verticalOffset = 0.5f;
+        }
+        ImGui::Checkbox("Enable Tint", &colorTintEnabled);
+
+        ImGui::ColorPicker3(
+            "Color",
+            tintColor,
+            ImGuiColorEditFlags_PickerHueWheel
+        );
+
+        if (ImGui::Button("Reset")) {
+            colorTintEnabled = false;
+            tintColor[0] = tintColor[1] = tintColor[2] = 1.0f;
+        }
+
+        ImGui::End();
         float aspect = w / static_cast<float>(h);
 
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
@@ -508,7 +581,30 @@ int main(int argc, char** argv) {
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
+if (colorTintEnabled) {
+    GLfloat tintedAmbient[] = {
+        0.2f * tintColor[0],
+        0.2f * tintColor[1],
+        0.2f * tintColor[2],
+        1.0f
+    };
 
+    GLfloat tintedDiffuse[] = {
+        0.65f * tintColor[0],
+        0.65f * tintColor[1],
+        0.65f * tintColor[2],
+        1.0f
+    };
+
+    glLightfv(GL_LIGHT0, GL_AMBIENT, tintedAmbient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, tintedDiffuse);
+} else {
+    GLfloat originalAmbient[] = {0.2f, 0.2f, 0.2f, 1.0f};
+    GLfloat originalDiffuse[] = {0.65f, 0.65f, 0.65f, 1.0f};
+
+    glLightfv(GL_LIGHT0, GL_AMBIENT, originalAmbient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, originalDiffuse);
+}
         if (shirtMesh.isValid) {
             glm::vec3 meshShoulderVec = shirtMesh.rightShoulderPos - shirtMesh.leftShoulderPos;
             glm::vec3 meshShoulderCenter = (shirtMesh.leftShoulderPos + shirtMesh.rightShoulderPos) * 0.5f;
@@ -538,12 +634,12 @@ int main(int argc, char** argv) {
 
                 // Visual fit multiplier.
                 // Increase if jacket is too small, decrease if too big.
-                scaleFactor *= 1.35f;
+                scaleFactor *= sizeMultiplier;
 
                 torsoModel = glm::scale(glm::mat4(1.0f), glm::vec3(scaleFactor)) * torsoModel;
 
                 // Slightly raise the jacket relative to shoulder center.
-                glm::vec3 finalPos = torsoCenter + glm::vec3(0.0f, 0.08f * scaleFactor, 0.0f);
+                glm::vec3 finalPos = torsoCenter + glm::vec3(0.0f, verticalOffset * scaleFactor, 0.0f);
                 torsoModel = glm::translate(glm::mat4(1.0f), finalPos) * torsoModel;
 
                 shirtMesh.resetToBindPose();
@@ -634,7 +730,11 @@ int main(int argc, char** argv) {
                     glBindTexture(GL_TEXTURE_2D, shirtMesh.textureId);
                 }
 
-                glColor3f(1.0f, 1.0f, 1.0f);
+                if (colorTintEnabled) {
+    glColor3f(tintColor[0], tintColor[1], tintColor[2]);
+} else {
+    glColor3f(1.0f, 1.0f, 1.0f);
+}
                 shirtMesh.draw();
 
                 if (shirtMesh.hasTexture) {
@@ -643,11 +743,16 @@ int main(int argc, char** argv) {
                 }
             }
         }
+       
+        ImGui::Render();
+        ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
-
+    ImGui_ImplOpenGL2_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
     tracker.stop();
     glDeleteTextures(1, &camTex);
     camera.release();

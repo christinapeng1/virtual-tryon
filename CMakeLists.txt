@@ -9,7 +9,6 @@ find_package(glfw3 REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(glm REQUIRED)
 
-# Explicitly link assimp
 find_library(ASSIMP_LIBRARY assimp PATHS /opt/homebrew/opt/assimp/lib)
 find_path(ASSIMP_INCLUDE assimp/Importer.hpp PATHS /opt/homebrew/opt/assimp/include)
 
@@ -20,9 +19,32 @@ if(NOT ASSIMP_INCLUDE)
     message(FATAL_ERROR "assimp headers not found")
 endif()
 
-add_executable(main src/main.cpp src/pose_tracker.cpp src/utils.cpp src/mesh.cpp)
+set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/external/imgui)
 
-target_include_directories(main PRIVATE ${OpenCV_INCLUDE_DIRS} ${ASSIMP_INCLUDE})
+set(IMGUI_SOURCES
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_opengl2.cpp
+)
+
+add_executable(main
+    src/main.cpp
+    src/pose_tracker.cpp
+    src/utils.cpp
+    src/mesh.cpp
+    ${IMGUI_SOURCES}
+)
+
+target_include_directories(main PRIVATE
+    src
+    ${OpenCV_INCLUDE_DIRS}
+    ${ASSIMP_INCLUDE}
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+)
 
 target_link_libraries(main
     glfw
@@ -33,7 +55,11 @@ target_link_libraries(main
 
 add_executable(calibration calibration.cpp src/mesh.cpp)
 
-target_include_directories(calibration PRIVATE src ${OpenCV_INCLUDE_DIRS} ${ASSIMP_INCLUDE})
+target_include_directories(calibration PRIVATE
+    src
+    ${OpenCV_INCLUDE_DIRS}
+    ${ASSIMP_INCLUDE}
+)
 
 target_link_libraries(calibration
     glfw
