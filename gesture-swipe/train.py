@@ -31,7 +31,7 @@ train_loader = DataLoader(train, batch_size=16, sampler=sampler)
 val_loader = DataLoader(val, batch_size=16)
 
 model = GestureCNN(num_classes=3).cuda()
-opt = torch.optim.Adam(model.parameters(), lr=1e-4)
+opt = torch.optim.Adam(model.parameters(), lr=5e-5)
 loss_fn = torch.nn.CrossEntropyLoss()
 
 train_accs = []
