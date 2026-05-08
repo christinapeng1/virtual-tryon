@@ -37,6 +37,9 @@ loss_fn = torch.nn.CrossEntropyLoss()
 train_accs = []
 val_accs = []
 
+train_losses = []
+val_losses = []
+
 for epoch in range(10):
     model.train()
 
@@ -63,10 +66,13 @@ for epoch in range(10):
     train_acc = correct / total
     train_accs.append(train_acc)
 
+    train_losses.append(total_loss / len(train_loader))
+
     model.eval()
 
     val_correct = 0
     val_total = 0
+    vtotal_loss = 0
 
     with torch.no_grad():
         for x, y in val_loader:
@@ -74,15 +80,19 @@ for epoch in range(10):
 
             pred = model(x)
             preds = pred.argmax(dim=1)
+            val_loss = loss_fn(pred, y)
+            vtotal_loss += val_loss.item()
 
             val_correct += (preds == y).sum().item()
             val_total += y.size(0)
 
     val_acc = val_correct / val_total
     val_accs.append(val_acc)
+    val_losses.append(vtotal_loss / len(val_loader))
 
-    print(f"Epoch {epoch} | Loss: {total_loss / len(train_loader):.4f} | Train Accuracy {train_acc:.4f} | Val Accuracy {val_acc:.4f}")
+    print(f"Epoch {epoch} | Train Loss: {total_loss / len(train_loader):.4f} | Val Loss: {vtotal_loss / len(val_loader):.4f} |Train Accuracy {train_acc:.4f} | Val Accuracy {val_acc:.4f}")
 
+plt.figure()
 plt.plot(train_accs, label="Train Accuracy")
 plt.plot(val_accs, label="Validation Accuracy")
 
@@ -91,6 +101,20 @@ plt.ylabel("Accuracy")
 plt.title("Training vs Validation Accuracy")
 plt.legend()
 
-plt.show()
+plt.savefig("trainvalacc.png")
+plt.close()
+
+plt.figure()
+
+plt.plot(train_losses, label="Train Loss")
+plt.plot(val_losses, label="Validation Loss")
+
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.title("Training vs Validation Loss")
+plt.legend()
+
+plt.savefig("trainvalloss.png")
+plt.close()
 
 torch.save(model.state_dict(), "gesture_model.pth")
