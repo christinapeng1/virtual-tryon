@@ -27,11 +27,11 @@ sample_weights = torch.tensor(sample_weights, dtype=torch.float32)
 
 sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
 
-train_loader = DataLoader(train, batch_size=16, sampler=sampler)
-val_loader = DataLoader(val, batch_size=16)
+train_loader = DataLoader(train, batch_size=32, sampler=sampler)
+val_loader = DataLoader(val, batch_size=32)
 
 model = GestureCNN(num_classes=3).cuda()
-opt = torch.optim.Adam(model.parameters(), lr=5e-5)
+opt = torch.optim.Adam(model.parameters(), lr=1e-5)
 loss_fn = torch.nn.CrossEntropyLoss()
 
 train_accs = []
