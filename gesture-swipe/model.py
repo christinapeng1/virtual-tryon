@@ -23,7 +23,7 @@ class GestureCNN(nn.Module):
             nn.Flatten(),
             nn.Linear(64 * (H//4) * (W//4), 128),
             nn.ReLU(),
-            nn.Dropout(0.3)
+            nn.Dropout(0.3),
             nn.Linear(128, num_classes)
         )
 
