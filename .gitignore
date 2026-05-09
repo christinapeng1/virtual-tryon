@@ -19,3 +19,5 @@ checkpoints/
 
 *.out
 *.err
+.vscode
+external/imgui
