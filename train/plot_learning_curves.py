@@ -7,11 +7,19 @@ Usage
   # Single run:
   python train/plot_learning_curves.py posenet_sub_2196619.out
 
-  # Multiple runs overlaid (add --label for legend names):
+  # Multiple runs overlaid (add --labels for legend names):
   python train/plot_learning_curves.py \\
-      posenet_sub_2196619.out --label "20% subsample" \\
-      posenet_sub_2214139.out --label "40% subsample" \\
+      posenet_sub_2196619.out --labels "20% subsample" \\
+      posenet_sub_2214139.out --labels "40% subsample" \\
       --out figures/learning_curves.png
+
+  # Merge resumed jobs (same label → merged) and cap a run at epoch 20:
+  python train/plot_learning_curves.py \\
+      posenet_train_2195259.out posenet_train_2219828.out \\
+      posenet_sub_2239613.out \\
+      --labels "Small (all data)" "Small (all data)" "Large (20% sub, MNetV3-L)" \\
+      --max-epoch 20 \\
+      --out figures/small_vs_large.png
 
 Output
 ------
@@ -75,6 +83,17 @@ def merge_runs(run_dicts: list[dict]) -> dict:
     return {"epochs": epochs, "train": train, "val": val, "lr": lr}
 
 
+def clip_to_max_epoch(data: dict, max_epoch: int) -> dict:
+    """Drop any epochs beyond *max_epoch* (inclusive)."""
+    mask = [e <= max_epoch for e in data["epochs"]]
+    return {
+        "epochs": [v for v, m in zip(data["epochs"], mask) if m],
+        "train":  [v for v, m in zip(data["train"],  mask) if m],
+        "val":    [v for v, m in zip(data["val"],     mask) if m],
+        "lr":     [v for v, m in zip(data["lr"],      mask) if m],
+    }
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def parse_args():
@@ -114,6 +133,13 @@ def parse_args():
         default=150,
         help="Output DPI (default: 150)",
     )
+    p.add_argument(
+        "--max-epoch",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Discard epochs beyond N (applied per run after merging)",
+    )
     return p.parse_args()
 
 
@@ -150,6 +176,8 @@ def main():
             continue
 
         merged = merge_runs(parsed) if len(parsed) > 1 else parsed[0]
+        if args.max_epoch is not None:
+            merged = clip_to_max_epoch(merged, args.max_epoch)
         runs.append((label, merged))
         if len(parsed) > 1:
             print(f"  {label}: merged {len(paths)} files -> {len(merged['epochs'])} epochs")
